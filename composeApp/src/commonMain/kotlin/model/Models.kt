@@ -1,5 +1,7 @@
 package model
 
+import kotlinx.datetime.LocalDateTime
+
 enum class Round(val displayName: String, val points: Int) {
     GROUP("Group Stage", 0),
     ROUND_OF_32("Round of 32", 2),
@@ -30,7 +32,8 @@ data class Match(
     val team2: Team? = null,
     val goals1: Int? = null,
     val goals2: Int? = null,
-    val round: Round
+    val round: Round,
+    val date: LocalDateTime? = null
 )
 
 data class Group(

@@ -4,6 +4,7 @@ import model.*
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import org.apache.poi.ss.usermodel.CellType
 import java.io.InputStream
+import kotlinx.datetime.*
 
 class ExcelReader {
 
@@ -26,6 +27,14 @@ class ExcelReader {
             val t1n = getCellValueAsString(row.getCell(8))
             val t2n = getCellValueAsString(row.getCell(9))
 
+            val date = try {
+                val cell = row.getCell(4)
+                if (cell?.cellType == CellType.NUMERIC) {
+                    val javaDate = cell.dateCellValue
+                    javaDate.toInstant().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime().toKotlinLocalDateTime()
+                } else null
+            } catch (e: Exception) { null }
+
             val round = when {
                 matchId <= 72 -> Round.GROUP
                 matchId <= 88 -> Round.ROUND_OF_32
@@ -42,7 +51,8 @@ class ExcelReader {
                 team2Placeholder = t2p,
                 team1 = t1n?.takeIf { it.isNotBlank() }?.let { Team(it) },
                 team2 = t2n?.takeIf { it.isNotBlank() }?.let { Team(it) },
-                round = round
+                round = round,
+                date = date
             )
             allMatches.add(match)
 
@@ -66,18 +76,38 @@ class ExcelReader {
 
         val predictions = mutableListOf<Match>()
 
-        // 1. Group Stage: Rows 5 to 87 (indices 4 to 86)
-        for (i in 4..86) {
+        // Find block start column
+        val isMaster = participantName == "Results"
+        var colOffset = if (isMaster) 1 else -1
+
+        if (!isMaster) {
+            val nameRow = sheet.getRow(2) // Row 3
+            if (nameRow != null) {
+                for (c in 1..200) {
+                    val n = getCellValueAsString(nameRow.getCell(c))
+                    if (n?.equals(participantName, ignoreCase = true) == true) {
+                        colOffset = c - 1 // Start of block (Score 1 column)
+                        break
+                    }
+                }
+            }
+            if (colOffset == -1) colOffset = 8 // Default to Anna if not found
+        }
+
+        // 1. Group Stage (Rows 6 to 87)
+        for (i in 5..86) {
             val row = sheet.getRow(i) ?: continue
-            val t1Name = getCellValueAsString(row.getCell(9))
-            val t2Name = getCellValueAsString(row.getCell(11))
-            val s1 = getCellValueAsInt(row.getCell(8))
-            val s2 = getCellValueAsInt(row.getCell(10))
+            // Identify match by Teams since ID column is only in block 0
+            val t1n = getCellValueAsString(row.getCell(colOffset + 1))
+            val t2n = getCellValueAsString(row.getCell(colOffset + 3))
+            val s1 = getCellValueAsInt(row.getCell(colOffset))
+            val s2 = getCellValueAsInt(row.getCell(colOffset + 2))
 
-            if (t1Name != null && t1Name.isNotBlank() && t2Name != null && t2Name.isNotBlank()) {
-                val team1 = Team(t1Name)
-                val team2 = Team(t2Name)
+            if (t1n != null && t2n != null) {
+                val team1 = Team(t1n)
+                val team2 = Team(t2n)
 
+                // Find match in structure
                 val matchStruct = structure.find {
                     it.round == Round.GROUP &&
                     ((it.team1 == team1 && it.team2 == team2) || (it.team1 == team2 && it.team2 == team1))
@@ -85,68 +115,37 @@ class ExcelReader {
 
                 if (matchStruct != null) {
                     val (finalS1, finalS2) = if (matchStruct.team1 == team1) s1 to s2 else s2 to s1
-                    predictions.add(Match(
-                        id = matchStruct.id,
-                        team1Placeholder = matchStruct.team1Placeholder,
-                        team2Placeholder = matchStruct.team2Placeholder,
-                        team1 = matchStruct.team1,
-                        team2 = matchStruct.team2,
-                        goals1 = finalS1,
-                        goals2 = finalS2,
-                        round = Round.GROUP
-                    ))
+                    predictions.add(matchStruct.copy(goals1 = finalS1, goals2 = finalS2))
                 }
             }
         }
 
-        // 2. Knockout Stage: Rows 85 to 124
-        for (i in 84..123) {
+        // 2. Knockout Stage (Match 73 starts Row 90)
+        for (i in 89..123) {
             val row = sheet.getRow(i) ?: continue
-            val t1Name = getCellValueAsString(row.getCell(9))
-            val t2Name = getCellValueAsString(row.getCell(11))
-            val s1 = getCellValueAsInt(row.getCell(8))
-            val s2 = getCellValueAsInt(row.getCell(10))
+            val matchId = i - 89 + 73
+            val matchStruct = structure.find { it.id == matchId } ?: continue
 
-            if (t1Name != null && t1Name.isNotBlank() && t2Name != null && t2Name.isNotBlank()) {
-                val team1 = Team(t1Name)
-                val team2 = Team(t2Name)
+            // Scores at offset +8 and +9 (e.g. Anna starts C9, scores at C17,C18)
+            val s1 = getCellValueAsInt(row.getCell(colOffset + 8))
+            val s2 = getCellValueAsInt(row.getCell(colOffset + 9))
 
-                val round = when {
-                    i <= 104 -> Round.ROUND_OF_32
-                    i <= 113 -> Round.ROUND_OF_16
-                    i <= 118 -> Round.QUARTER_FINAL
-                    i <= 121 -> Round.SEMI_FINAL
-                    i <= 123 -> Round.FINAL
-                    else -> Round.GROUP
-                }
+            // Teams for participants are usually at B+1, B+3 (formulas)
+            val t1n = getCellValueAsString(row.getCell(colOffset + 1))
+            val t2n = getCellValueAsString(row.getCell(colOffset + 3))
 
-                val matchId = when(round) {
-                    Round.ROUND_OF_32 -> 73 + (i - 89)
-                    Round.ROUND_OF_16 -> 89 + (i - 106)
-                    Round.QUARTER_FINAL -> 97 + (i - 115)
-                    Round.SEMI_FINAL -> 101 + (i - 120)
-                    Round.FINAL -> 104
-                    else -> 0
-                }
-
-                if (matchId > 0) {
-                    predictions.add(Match(
-                        id = matchId,
-                        team1Placeholder = "", team2Placeholder = "",
-                        team1 = team1,
-                        team2 = team2,
-                        goals1 = s1,
-                        goals2 = s2,
-                        round = round
-                    ))
-                }
-            }
+            predictions.add(matchStruct.copy(
+                team1 = t1n?.takeIf { it.isNotBlank() }?.let { Team(it) } ?: matchStruct.team1,
+                team2 = t2n?.takeIf { it.isNotBlank() }?.let { Team(it) } ?: matchStruct.team2,
+                goals1 = s1,
+                goals2 = s2
+            ))
         }
 
-        // 3. World Champion
-        val championRow = sheet.getRow(125)
+        // 3. World Champion (Row 128)
+        val championRow = sheet.getRow(127)
         if (championRow != null) {
-            val champName = getCellValueAsString(championRow.getCell(8))
+            val champName = getCellValueAsString(championRow.getCell(colOffset + 1))
             if (champName != null && champName.isNotBlank()) {
                 predictions.add(Match(1000, "", "", Team(champName), null, 1, 0, Round.CHAMPION))
             }
@@ -165,7 +164,9 @@ class ExcelReader {
                 try {
                     cell.stringCellValue.trim()
                 } catch (e: Exception) {
-                    cell.numericCellValue.toLong().toString()
+                    try {
+                        cell.numericCellValue.toLong().toString()
+                    } catch (e2: Exception) { null }
                 }
             }
             else -> null

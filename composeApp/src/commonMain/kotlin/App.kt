@@ -22,6 +22,9 @@ import model.*
 import java.io.File
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
+import kotlinx.datetime.Clock
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 private val DarkGray = Color(0xFF0A0A0A)
 private val SurfaceGray = Color(0xFF161616)
@@ -46,6 +49,7 @@ fun App() {
     var selectedRoundFilter by remember { mutableStateOf<Round?>(null) }
     var selectedMatchId by remember { mutableStateOf<Int?>(null) }
     var tournamentStructure by remember { mutableStateOf<List<Match>>(emptyList()) }
+    var onlyCalculatePastGames by remember { mutableStateOf(false) }
 
     val reader = ExcelReader()
     val tournamentLogic = TournamentLogic()
@@ -92,6 +96,12 @@ fun App() {
                     ResultSourceOption("Mock Data", resultSource == ResultSource.MOCK) { resultSource = ResultSource.MOCK }
                     ResultSourceOption("Live API", resultSource == ResultSource.API) { resultSource = ResultSource.API }
 
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = onlyCalculatePastGames, onCheckedChange = { onlyCalculatePastGames = it }, colors = CheckboxDefaults.colors(checkedColor = PrimaryGold))
+                        Text("Only calculate past games", color = Color.LightGray, fontSize = 12.sp)
+                    }
+
                     Spacer(modifier = Modifier.height(24.dp))
                     SectionHeader("PARTICIPANTS")
                     ModernButton("Load Pool Files (${participantFiles.size})", Icons.Default.Groups) {
@@ -122,7 +132,15 @@ fun App() {
                                         ResultSource.API -> RealApiResultProvider(structureMatches)
                                     }
 
-                                    val rawResults = resultProvider.getResults()
+                                    val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+                                    var rawResults = resultProvider.getResults()
+
+                                    if (onlyCalculatePastGames) {
+                                        rawResults = rawResults.map { m ->
+                                            if (m.date != null && m.date > now) m.copy(goals1 = null, goals2 = null) else m
+                                        }
+                                    }
+
                                     val actualTournament = tournamentLogic.simulateTournament(structureMatches, groups, rawResults)
 
                                     val results = participantFiles.map { file ->
@@ -135,6 +153,7 @@ fun App() {
                                     rankings = results
                                     statusMessage = "Analysis Ready"
                                 } catch (e: Exception) {
+                                    e.printStackTrace()
                                     statusMessage = "Error: ${e.message}"
                                 } finally {
                                     isLoading = false

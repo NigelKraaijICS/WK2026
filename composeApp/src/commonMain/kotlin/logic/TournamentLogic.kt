@@ -57,14 +57,12 @@ class TournamentLogic {
         val advancingTeams = mutableMapOf<String, Team>()
         val allStandings = groups.map { calculateGroupStandings(it, allMatches) }
 
-        // 1st and 2nd from each group (12 groups * 2 = 24 teams)
         allStandings.forEachIndexed { index, standings ->
             val groupName = groups[index].name
             if (standings.size >= 1) advancingTeams["1$groupName"] = standings[0].team
             if (standings.size >= 2) advancingTeams["2$groupName"] = standings[1].team
         }
 
-        // 8 best 3rd placed teams
         val thirdPlaced = allStandings.filter { it.size >= 3 }.map { it[2] }
             .sortedWith(
                 compareByDescending<Standing> { it.points }
@@ -72,9 +70,6 @@ class TournamentLogic {
                     .thenByDescending { it.goalsFor }
             )
 
-        // Map 3rd placed teams to placeholders 3-ABC...
-        // For the 2026 format, the assignment depends on which groups' 3rd place teams qualify.
-        // Here we simplify by assigning them in order of their ranking to the placeholders found in the structure.
         val thirdPlacePlaceholderNames = listOf(
             "3-ABCDF", "3-ABCDE", "3-ADEFG", "3-ABCGH", "3-BCDEG", "3-BCDFG", "3-CEFHI", "3-CDFGH",
             "3-ABCHI", "3-ABCFG", "3-ADEGH", "3-ACEFG", "3-ABCEF", "3-ABDEG", "3-BCDFH", "3-BCDFI",
@@ -99,29 +94,32 @@ class TournamentLogic {
     }
 
     fun simulateTournament(structure: List<Match>, groups: List<Group>, results: List<Match>): List<Match> {
-        val simulatedMatches = results.toMutableList()
-        val advancingFromGroups = determineAdvancingTeams(groups, results)
+        // Start with the structure and merge results into it
+        val fullTournament = structure.map { match ->
+            val result = results.find { it.id == match.id }
+            if (result != null) {
+                match.copy(
+                    team1 = result.team1 ?: match.team1,
+                    team2 = result.team2 ?: match.team2,
+                    goals1 = result.goals1,
+                    goals2 = result.goals2
+                )
+            } else match
+        }.toMutableList()
 
-        val fullTournament = structure.toMutableList()
+        val advancingFromGroups = determineAdvancingTeams(groups, fullTournament.filter { it.round == Round.GROUP })
 
-        // 1. Update R32 with group results
+        // Update R32 with advancements
         for (i in fullTournament.indices) {
             val match = fullTournament[i]
             if (match.round == Round.ROUND_OF_32) {
                 val t1 = match.team1 ?: advancingFromGroups[match.team1Placeholder]
                 val t2 = match.team2 ?: advancingFromGroups[match.team2Placeholder]
-
-                val actualResult = results.find { it.id == match.id }
-                fullTournament[i] = match.copy(
-                    team1 = t1,
-                    team2 = t2,
-                    goals1 = actualResult?.goals1,
-                    goals2 = actualResult?.goals2
-                )
+                fullTournament[i] = match.copy(team1 = t1, team2 = t2)
             }
         }
 
-        // 2. Propagate through Knockouts
+        // Propagate winners
         val rounds = listOf(Round.ROUND_OF_32, Round.ROUND_OF_16, Round.QUARTER_FINAL, Round.SEMI_FINAL, Round.FINAL)
 
         for (round in rounds) {
@@ -130,7 +128,6 @@ class TournamentLogic {
                 val winner = determineWinner(match)
                 if (winner != null) {
                     val nextMatchPlaceholder = "W${match.id}"
-                    // Find where this winner goes
                     for (j in fullTournament.indices) {
                         val m = fullTournament[j]
                         if (m.team1Placeholder == nextMatchPlaceholder) {
@@ -139,23 +136,8 @@ class TournamentLogic {
                             fullTournament[j] = m.copy(team2 = winner)
                         }
                     }
-
                     if (round == Round.FINAL) {
                         fullTournament.add(Match(1000, "", "", winner, null, 1, 0, Round.CHAMPION))
-                    }
-                }
-            }
-
-            // After resolving winners for this round, check if we have results for the next round
-            val nextRound = rounds.getOrNull(rounds.indexOf(round) + 1)
-            if (nextRound != null) {
-                for (j in fullTournament.indices) {
-                    val m = fullTournament[j]
-                    if (m.round == nextRound) {
-                        val actualResult = results.find { it.id == m.id }
-                        if (actualResult != null) {
-                            fullTournament[j] = m.copy(goals1 = actualResult.goals1, goals2 = actualResult.goals2)
-                        }
                     }
                 }
             }
@@ -170,7 +152,7 @@ class TournamentLogic {
         return when {
             g1 > g2 -> match.team1
             g1 < g2 -> match.team2
-            else -> match.team1 // Simplify tie-break in KO as team1 advances (should be penalties)
+            else -> match.team1 // Tie-break: Team 1 advances (simplification)
         }
     }
 }

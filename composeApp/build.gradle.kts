@@ -18,6 +18,7 @@ kotlin {
                 implementation(compose.components.resources)
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
                 implementation(compose.materialIconsExtended)
+                implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.5.0")
 
                 // Ktor & Serialization
                 implementation("io.ktor:ktor-client-core:2.3.9")

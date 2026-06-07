@@ -10,7 +10,7 @@ class ScoringEngine {
         val advancementScores = mutableListOf<AdvancementScoreInfo>()
         val roundSummaries = mutableMapOf<Round, Int>()
 
-        // 1. Match Scores
+        // 1. Match Scores (Outcome and Exact Score)
         participant.predictions.filter { it.round != Round.CHAMPION }.forEach { prediction ->
             val actual = actualResults.find { it.id == prediction.id }
             var pointsForMatch = 0
@@ -42,7 +42,7 @@ class ScoringEngine {
             }
         }
 
-        // 2. Advancement Points
+        // 2. Advancement Points (Cumulative)
         val rounds = listOf(
             Round.ROUND_OF_32,
             Round.ROUND_OF_16,
