@@ -9,6 +9,7 @@ class ExcelResultProvider(
 ) : ResultProvider {
     override fun getResults(): List<Match> {
         val reader = ExcelReader()
-        return reader.readParticipant(inputStream, structure).predictions
+        // For ground truth, name doesn't matter much but we'll use "Results"
+        return reader.readParticipant(inputStream, structure, "Results").predictions
     }
 }

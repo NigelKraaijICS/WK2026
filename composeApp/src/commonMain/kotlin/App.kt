@@ -42,9 +42,7 @@ fun App() {
     var selectedParticipant by remember { mutableStateOf<Pair<String, ScoreBreakdown>?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf("") }
-    var viewMode by remember { mutableStateOf(ViewMode.OVERALL) }
-
-    // Filters
+    var currentViewMode by remember { mutableStateOf(ViewMode.OVERALL) }
     var selectedRoundFilter by remember { mutableStateOf<Round?>(null) }
     var selectedMatchId by remember { mutableStateOf<Int?>(null) }
     var tournamentStructure by remember { mutableStateOf<List<Match>>(emptyList()) }
@@ -77,9 +75,9 @@ fun App() {
                     Spacer(modifier = Modifier.height(32.dp))
 
                     SectionHeader("VIEW MODE")
-                    NavButton("Overall Rankings", Icons.Default.EmojiEvents, viewMode == ViewMode.OVERALL) { viewMode = ViewMode.OVERALL }
-                    NavButton("Round Analysis", Icons.Default.Category, viewMode == ViewMode.ROUND_ANALYSIS) { viewMode = ViewMode.ROUND_ANALYSIS }
-                    NavButton("Match Analytics", Icons.Default.SportsSoccer, viewMode == ViewMode.MATCH_ANALYSIS) { viewMode = ViewMode.MATCH_ANALYSIS }
+                    NavButton("Overall Rankings", Icons.Default.EmojiEvents, currentViewMode == ViewMode.OVERALL) { currentViewMode = ViewMode.OVERALL }
+                    NavButton("Round Analysis", Icons.Default.Category, currentViewMode == ViewMode.ROUND_ANALYSIS) { currentViewMode = ViewMode.ROUND_ANALYSIS }
+                    NavButton("Match Analytics", Icons.Default.SportsSoccer, currentViewMode == ViewMode.MATCH_ANALYSIS) { currentViewMode = ViewMode.MATCH_ANALYSIS }
 
                     Spacer(modifier = Modifier.height(32.dp))
                     SectionHeader("SOURCE CONFIG")
@@ -128,7 +126,8 @@ fun App() {
                                     val actualTournament = tournamentLogic.simulateTournament(structureMatches, groups, rawResults)
 
                                     val results = participantFiles.map { file ->
-                                        val p = reader.readParticipant(file.inputStream(), structureMatches)
+                                        val name = file.nameWithoutExtension
+                                        val p = reader.readParticipant(file.inputStream(), structureMatches, name)
                                         val pTournament = tournamentLogic.simulateTournament(structureMatches, groups, p.predictions)
                                         p.name to scoringEngine.calculateScoreBreakdown(Participant(p.name, pTournament), actualTournament)
                                     }.sortedByDescending { it.second.totalScore }
@@ -156,7 +155,7 @@ fun App() {
                     if (selectedParticipant != null) {
                         ParticipantDetailView(selectedParticipant!!) { selectedParticipant = null }
                     } else {
-                        when (viewMode) {
+                        when (currentViewMode) {
                             ViewMode.OVERALL -> OverallLeaderboard(rankings) { selectedParticipant = it }
                             ViewMode.ROUND_ANALYSIS -> RoundLeaderboard(rankings, selectedRoundFilter) { selectedRoundFilter = it }
                             ViewMode.MATCH_ANALYSIS -> MatchLeaderboard(rankings, tournamentStructure, selectedMatchId) { selectedMatchId = it }
@@ -343,7 +342,7 @@ fun RankingCard(item: Pair<String, ScoreBreakdown>, onClick: (Pair<String, Score
                 Spacer(modifier = Modifier.width(20.dp))
                 Column {
                     Text(name, style = MaterialTheme.typography.h6, fontWeight = FontWeight.Bold)
-                    Text("Rank ${breakdown.totalScore} pts", style = MaterialTheme.typography.caption, color = Color.Gray)
+                    Text("${breakdown.totalScore} pts", style = MaterialTheme.typography.caption, color = Color.Gray)
                 }
             }
             Text("${breakdown.totalScore}", style = MaterialTheme.typography.h3, fontWeight = FontWeight.Black, color = PrimaryGold)

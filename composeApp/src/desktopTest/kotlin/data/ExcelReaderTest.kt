@@ -18,9 +18,9 @@ class ExcelReaderTest {
 
         val reader = ExcelReader()
         val (groups, structure) = reader.readTournamentStructure(excelFile.inputStream())
-        val participant = reader.readParticipant(excelFile.inputStream(), structure)
+        val participant = reader.readParticipant(excelFile.inputStream(), structure, "TestUser")
 
-        assertEquals("Anna", participant.name)
+        assertEquals("TestUser", participant.name)
         assertTrue(participant.predictions.isNotEmpty())
     }
 

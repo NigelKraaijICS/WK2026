@@ -59,18 +59,12 @@ class ExcelReader {
         }, allMatches)
     }
 
-    fun readParticipant(inputStream: InputStream, structure: List<Match>): Participant {
+    fun readParticipant(inputStream: InputStream, structure: List<Match>, participantName: String): Participant {
         val workbook = WorkbookFactory.create(inputStream)
         val sheet = workbook.getSheet("Predictions_1") ?: workbook.getSheet("Predictions_2")
             ?: throw IllegalArgumentException("Sheet Predictions_1 or Predictions_2 not found")
 
-        val nameCell = sheet.getRow(2)?.getCell(8)
-        val name = nameCell?.let { getCellValueAsString(it) } ?: "Unknown"
-
         val predictions = mutableListOf<Match>()
-
-        // Participant columns in Predictions_1 (based on analysis):
-        // Col 8: Score 1, Col 9: Team 1 Name, Col 10: Score 2, Col 11: Team 2 Name
 
         // 1. Group Stage: Rows 5 to 87 (indices 4 to 86)
         for (i in 4..86) {
@@ -90,7 +84,6 @@ class ExcelReader {
                 }
 
                 if (matchStruct != null) {
-                    // Match predicted scores to the structure's team order
                     val (finalS1, finalS2) = if (matchStruct.team1 == team1) s1 to s2 else s2 to s1
                     predictions.add(Match(
                         id = matchStruct.id,
@@ -127,7 +120,6 @@ class ExcelReader {
                     else -> Round.GROUP
                 }
 
-                // For KO, the row corresponds to a specific match ID in our structure
                 val matchId = when(round) {
                     Round.ROUND_OF_32 -> 73 + (i - 89)
                     Round.ROUND_OF_16 -> 89 + (i - 106)
@@ -161,7 +153,7 @@ class ExcelReader {
         }
 
         workbook.close()
-        return Participant(name, predictions)
+        return Participant(participantName, predictions)
     }
 
     private fun getCellValueAsString(cell: org.apache.poi.ss.usermodel.Cell?): String? {
