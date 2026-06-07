@@ -8,11 +8,13 @@ class ScoringEngine {
         var totalScore = 0
         val matchScores = mutableListOf<MatchScoreInfo>()
         val advancementScores = mutableListOf<AdvancementScoreInfo>()
+        val roundSummaries = mutableMapOf<Round, Int>()
 
-        // Match Scores (Group and Knockout)
+        // 1. Match Scores
         participant.predictions.filter { it.round != Round.CHAMPION }.forEach { prediction ->
             val actual = actualResults.find { it.id == prediction.id }
             var pointsForMatch = 0
+            val explanations = mutableListOf<String>()
 
             if (actual != null && actual.goals1 != null && actual.goals2 != null &&
                 prediction.goals1 != null && prediction.goals2 != null &&
@@ -23,19 +25,24 @@ class ScoringEngine {
 
                 if (actualResult == predResult) {
                     pointsForMatch += 2
+                    explanations.add("Correct outcome (+2)")
                     if (actual.goals1 == prediction.goals1 && actual.goals2 == prediction.goals2) {
                         pointsForMatch += 3
+                        explanations.add("Exact score bonus (+3)")
                     }
                 }
             }
 
+            if (explanations.isEmpty()) explanations.add("No points earned")
+
             totalScore += pointsForMatch
             if (actual != null) {
-                matchScores.add(MatchScoreInfo(actual, prediction.goals1, prediction.goals2, pointsForMatch))
+                matchScores.add(MatchScoreInfo(actual, prediction.goals1, prediction.goals2, pointsForMatch, explanations.joinToString(", ")))
+                roundSummaries[actual.round] = (roundSummaries[actual.round] ?: 0) + pointsForMatch
             }
         }
 
-        // Advancement Points (Cumulative)
+        // 2. Advancement Points
         val rounds = listOf(
             Round.ROUND_OF_32,
             Round.ROUND_OF_16,
@@ -50,21 +57,25 @@ class ScoringEngine {
 
             predictedTeams.forEach { team ->
                 if (actualTeams.contains(team)) {
-                    totalScore += round.points
-                    advancementScores.add(AdvancementScoreInfo(team, round, round.points))
+                    val pts = round.points
+                    totalScore += pts
+                    advancementScores.add(AdvancementScoreInfo(team, round, pts, "Correctly predicted ${team.name} to reach ${round.displayName} (+ $pts)"))
+                    roundSummaries[round] = (roundSummaries[round] ?: 0) + pts
                 }
             }
         }
 
-        // World Champion
+        // 3. World Champion
         val actualChampion = actualResults.find { it.round == Round.CHAMPION }?.team1
         val predictedChampion = participant.predictions.find { it.round == Round.CHAMPION }?.team1
         if (actualChampion != null && actualChampion == predictedChampion) {
-            totalScore += Round.CHAMPION.points
-            advancementScores.add(AdvancementScoreInfo(actualChampion, Round.CHAMPION, Round.CHAMPION.points))
+            val pts = Round.CHAMPION.points
+            totalScore += pts
+            advancementScores.add(AdvancementScoreInfo(actualChampion, Round.CHAMPION, pts, "Correctly predicted World Champion (+ $pts)"))
+            roundSummaries[Round.CHAMPION] = (roundSummaries[Round.CHAMPION] ?: 0) + pts
         }
 
-        return ScoreBreakdown(totalScore, matchScores, advancementScores)
+        return ScoreBreakdown(totalScore, matchScores, advancementScores, roundSummaries)
     }
 
     private fun getTeamsAtRound(matches: List<Match>, round: Round): Set<Team> {

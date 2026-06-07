@@ -1,13 +1,13 @@
 package model
 
-enum class Round(val points: Int) {
-    GROUP(0),
-    ROUND_OF_32(2),
-    ROUND_OF_16(3),
-    QUARTER_FINAL(4),
-    SEMI_FINAL(6),
-    FINAL(8),
-    CHAMPION(10)
+enum class Round(val displayName: String, val points: Int) {
+    GROUP("Group Stage", 0),
+    ROUND_OF_32("Round of 32", 2),
+    ROUND_OF_16("Round of 16", 3),
+    QUARTER_FINAL("Quarter Finals", 4),
+    SEMI_FINAL("Semi Finals", 6),
+    FINAL("Final", 8),
+    CHAMPION("World Champion", 10)
 }
 
 data class Team(val name: String) {
@@ -42,20 +42,23 @@ data class Group(
 data class ScoreBreakdown(
     val totalScore: Int,
     val matchScores: List<MatchScoreInfo>,
-    val advancementScores: List<AdvancementScoreInfo>
+    val advancementScores: List<AdvancementScoreInfo>,
+    val roundSummaries: Map<Round, Int>
 )
 
 data class MatchScoreInfo(
     val match: Match,
     val predictedGoals1: Int?,
     val predictedGoals2: Int?,
-    val points: Int
+    val points: Int,
+    val explanation: String
 )
 
 data class AdvancementScoreInfo(
     val team: Team,
     val round: Round,
-    val points: Int
+    val points: Int,
+    val explanation: String
 )
 
 data class Participant(

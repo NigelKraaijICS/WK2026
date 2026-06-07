@@ -1,24 +1,63 @@
 package data
 
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.request.*
+import io.ktor.serialization.kotlinx.json.*
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import model.Match
+import model.Round
+import model.Team
 
-/**
- * Implementation of [ResultProvider] that fetches data from a real football API.
- *
- * To switch to a real API:
- * 1. Choose an API provider (e.g., https://www.football-data.org/ or https://api-football.com/).
- * 2. Add Ktor-client and Serialization dependencies to build.gradle.kts.
- * 3. Implement the [getResults] method using Ktor to fetch the JSON.
- * 4. Map the API's JSON response to our [Match] model.
- */
-class RealApiResultProvider : ResultProvider {
+class RealApiResultProvider(private val structure: List<Match>) : ResultProvider {
+
+    private val client = HttpClient {
+        install(ContentNegotiation) {
+            json(Json {
+                ignoreUnknownKeys = true
+            })
+        }
+    }
+
     override fun getResults(): List<Match> {
-        // Example implementation sketch:
-        // val client = HttpClient()
-        // val response: HttpResponse = client.get("https://api.football-data.org/v4/competitions/WC/matches")
-        // val apiMatches = response.body<List<ApiMatch>>()
-        // return apiMatches.map { it.toDomainMatch() }
+        // Since we are in a common module and need to return results synchronously for the current architecture,
+        // we'll use runBlocking or similar if needed, but the UI calls this in a thread anyway.
+        return kotlinx.coroutines.runBlocking {
+            try {
+                val response: ApiResponse = client.get("https://worldcup26.ir/get/games").body()
+                response.games.mapNotNull { game ->
+                    val id = game.id.toIntOrNull() ?: return@mapNotNull null
+                    val matchStruct = structure.find { it.id == id }
 
-        return emptyList()
+                    Match(
+                        id = id,
+                        team1Placeholder = matchStruct?.team1Placeholder ?: "",
+                        team2Placeholder = matchStruct?.team2Placeholder ?: "",
+                        team1 = Team(game.home_team_name_en),
+                        team2 = Team(game.away_team_name_en),
+                        goals1 = game.home_score.toIntOrNull(),
+                        goals2 = game.away_score.toIntOrNull(),
+                        round = matchStruct?.round ?: Round.GROUP
+                    )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                emptyList()
+            }
+        }
     }
 }
+
+@Serializable
+data class ApiResponse(val games: List<ApiGame>)
+
+@Serializable
+data class ApiGame(
+    val id: String,
+    val home_score: String,
+    val away_score: String,
+    val home_team_name_en: String,
+    val away_team_name_en: String
+)
