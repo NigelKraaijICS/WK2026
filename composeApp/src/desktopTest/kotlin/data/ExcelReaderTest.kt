@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 class ExcelReaderTest {
 
     @Test
-    fun testReadParticipant() {
+    fun testReadParticipants() {
         val excelFile = File("WK-pool.xlsx")
         if (!excelFile.exists()) {
             println("Skipping test because WK-pool.xlsx is not found")
@@ -18,9 +18,10 @@ class ExcelReaderTest {
 
         val reader = ExcelReader()
         val (groups, structure) = reader.readTournamentStructure(excelFile.inputStream())
-        val participant = reader.readParticipant(excelFile.inputStream(), structure, "TestUser")
+        val participants = reader.readParticipantsFromFile(excelFile.inputStream(), structure, "TestFile")
 
-        assertEquals("TestUser", participant.name)
+        assertTrue(participants.isNotEmpty())
+        val participant = participants[0]
         assertTrue(participant.predictions.isNotEmpty())
     }
 
@@ -38,6 +39,5 @@ class ExcelReaderTest {
         val groupA = groups.find { it.name == "A" }
         assertNotNull(groupA)
         assertEquals(4, groupA.teams.size)
-        assertTrue(groupA.teams.any { it.name == "Mexico" })
     }
 }

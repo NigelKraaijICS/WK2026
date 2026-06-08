@@ -72,16 +72,7 @@ class TournamentLogic {
 
         val thirdPlacePlaceholderNames = listOf(
             "3-ABCDF", "3-ABCDE", "3-ADEFG", "3-ABCGH", "3-BCDEG", "3-BCDFG", "3-CEFHI", "3-CDFGH",
-            "3-ABCHI", "3-ABCFG", "3-ADEGH", "3-ACEFG", "3-ABCEF", "3-ABDEG", "3-BCDFH", "3-BCDFI",
-            "3-BCDEF", "3-BCGHI", "3-CDEFG", "3-CEFGH", "3-ACDEF", "3-ACDFG", "3-ABEFG", "3-ABEFH",
-            "3-BCFGH", "3-BCEFG", "3-BCEFH", "3-ABDFG", "3-ABDFH", "3-ACFGH", "3-ACFHI", "3-ADEFG",
-            "3-AEGHI", "3-AEHIJ", "3-AFGHI", "3-AFGHJ", "3-AGHIJ", "3-BCEFG", "3-BCEFH", "3-BCEGH",
-            "3-BEFGH", "3-BEFGJ", "3-BEGHJ", "3-BGHIK", "3-BGHJK", "3-BIJKL", "3-CEFGJ", "3-CEGHI",
-            "3-CEGHJ", "3-CEGJK", "3-CFGHI", "3-CFGHJ", "3-CFGJK", "3-CFHIK", "3-CFHJK", "3-CFIJK",
-            "3-CGIJK", "3-CGHIK", "3-CGHJK", "3-EFGHI", "3-EFGHJ", "3-EFGJK", "3-EFHIK", "3-EFHJK",
-            "3-EFIJK", "3-EGHIK", "3-EGHJK", "3-EGIJK", "3-FGHIK", "3-FGHJK", "3-FGIJK", "3-FGHIJ",
-            "3-GHIJK", "3-GHIJL", "3-GHI KL", "3-GHJKL", "3-GIJKL", "3-HIJKL", "3-EFGIJ", "3-BEFIJ",
-            "3-ABCDF", "3-AEHIJ", "3-CDFGH", "3-DEIJL", "3-EHIJK"
+            "3-ABCHI", "3-ABCFG", "3-ADEGH", "3-ACEFG", "3-ABCEF", "3-ABDEG", "3-BCDFH", "3-BCDFI"
         ).distinct()
 
         thirdPlaced.take(8).forEachIndexed { index, standing ->
@@ -94,7 +85,6 @@ class TournamentLogic {
     }
 
     fun simulateTournament(structure: List<Match>, groups: List<Group>, results: List<Match>): List<Match> {
-        // Start with the structure and merge results into it
         val fullTournament = structure.map { match ->
             val result = results.find { it.id == match.id }
             if (result != null) {
@@ -109,7 +99,7 @@ class TournamentLogic {
 
         val advancingFromGroups = determineAdvancingTeams(groups, fullTournament.filter { it.round == Round.GROUP })
 
-        // Update R32 with advancements
+        // Update R32
         for (i in fullTournament.indices) {
             val match = fullTournament[i]
             if (match.round == Round.ROUND_OF_32) {
@@ -125,14 +115,17 @@ class TournamentLogic {
         for (round in rounds) {
             val roundMatches = fullTournament.filter { it.round == round }
             roundMatches.forEach { match ->
+                // If the results already specify a team1 and team2 for the NEXT round match that corresponds to this one,
+                // we should respect that over the simulation.
+                // But the simulator's job is to fill in the gaps.
                 val winner = determineWinner(match)
                 if (winner != null) {
                     val nextMatchPlaceholder = "W${match.id}"
                     for (j in fullTournament.indices) {
                         val m = fullTournament[j]
-                        if (m.team1Placeholder == nextMatchPlaceholder) {
+                        if (m.team1Placeholder == nextMatchPlaceholder && m.team1 == null) {
                             fullTournament[j] = m.copy(team1 = winner)
-                        } else if (m.team2Placeholder == nextMatchPlaceholder) {
+                        } else if (m.team2Placeholder == nextMatchPlaceholder && m.team2 == null) {
                             fullTournament[j] = m.copy(team2 = winner)
                         }
                     }
@@ -152,7 +145,12 @@ class TournamentLogic {
         return when {
             g1 > g2 -> match.team1
             g1 < g2 -> match.team2
-            else -> match.team1 // Tie-break: Team 1 advances (simplification)
+            else -> {
+                // In knockouts, there's always a winner. If the score is even,
+                // we'd need penalty shoot-out results. For now, we return Team 1
+                // unless Team 2 is explicitly set in the next round.
+                match.team1
+            }
         }
     }
 }

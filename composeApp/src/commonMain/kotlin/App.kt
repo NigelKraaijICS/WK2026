@@ -38,6 +38,7 @@ enum class ViewMode { OVERALL, ROUND_ANALYSIS, MATCH_ANALYSIS }
 
 @Composable
 fun App() {
+    var templateFile by remember { mutableStateOf<File?>(if (File("WK-pool.xlsx").exists()) File("WK-pool.xlsx") else null) }
     var participantFiles by remember { mutableStateOf(listOf<File>()) }
     var resultsFile by remember { mutableStateOf<File?>(null) }
     var resultSource by remember { mutableStateOf(ResultSource.MOCK) }
@@ -51,9 +52,9 @@ fun App() {
     var tournamentStructure by remember { mutableStateOf<List<Match>>(emptyList()) }
     var onlyCalculatePastGames by remember { mutableStateOf(false) }
 
-    val reader = ExcelReader()
-    val tournamentLogic = TournamentLogic()
-    val scoringEngine = ScoringEngine()
+    val reader = remember { ExcelReader() }
+    val tournamentLogic = remember { TournamentLogic() }
+    val scoringEngine = remember { ScoringEngine() }
 
     MaterialTheme(
         colors = darkColors(
@@ -84,8 +85,14 @@ fun App() {
                     NavButton("Match Analytics", Icons.Default.SportsSoccer, currentViewMode == ViewMode.MATCH_ANALYSIS) { currentViewMode = ViewMode.MATCH_ANALYSIS }
 
                     Spacer(modifier = Modifier.height(32.dp))
-                    SectionHeader("SOURCE CONFIG")
+                    SectionHeader("CONFIG")
 
+                    ModernButton(text = templateFile?.name ?: "Select Template", icon = Icons.Default.TableChart) {
+                        val chooser = JFileChooser().apply { fileFilter = FileNameExtensionFilter("Excel files", "xlsx") }
+                        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) templateFile = chooser.selectedFile
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
                     ResultSourceOption("Master Excel", resultSource == ResultSource.EXCEL) { resultSource = ResultSource.EXCEL }
                     if (resultSource == ResultSource.EXCEL) {
                         ModernButton(text = resultsFile?.name ?: "Select Results", icon = Icons.Default.FileUpload) {
@@ -99,7 +106,7 @@ fun App() {
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = onlyCalculatePastGames, onCheckedChange = { onlyCalculatePastGames = it }, colors = CheckboxDefaults.colors(checkedColor = PrimaryGold))
-                        Text("Only calculate past games", color = Color.LightGray, fontSize = 12.sp)
+                        Text("Only past games", color = Color.LightGray, fontSize = 12.sp)
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -122,8 +129,8 @@ fun App() {
                             statusMessage = "Syncing & Calculating..."
                             Thread {
                                 try {
-                                    val structureFile = File("WK-pool.xlsx")
-                                    val (groups, structureMatches) = reader.readTournamentStructure(structureFile.inputStream())
+                                    val tFile = templateFile ?: throw Exception("Select a template file first")
+                                    val (groups, structureMatches) = reader.readTournamentStructure(tFile.inputStream())
                                     tournamentStructure = structureMatches
 
                                     val resultProvider: ResultProvider = when (resultSource) {
@@ -143,11 +150,12 @@ fun App() {
 
                                     val actualTournament = tournamentLogic.simulateTournament(structureMatches, groups, rawResults)
 
-                                    val results = participantFiles.map { file ->
-                                        val name = file.nameWithoutExtension
-                                        val p = reader.readParticipant(file.inputStream(), structureMatches, name)
-                                        val pTournament = tournamentLogic.simulateTournament(structureMatches, groups, p.predictions)
-                                        p.name to scoringEngine.calculateScoreBreakdown(Participant(p.name, pTournament), actualTournament)
+                                    val results = participantFiles.flatMap { file ->
+                                        val participants = reader.readParticipantsFromFile(file.inputStream(), structureMatches, file.nameWithoutExtension)
+                                        participants.map { p ->
+                                            val pTournament = tournamentLogic.simulateTournament(structureMatches, groups, p.predictions)
+                                            p.name to scoringEngine.calculateScoreBreakdown(Participant(p.name, pTournament), actualTournament)
+                                        }
                                     }.sortedByDescending { it.second.totalScore }
 
                                     rankings = results
@@ -162,7 +170,7 @@ fun App() {
                         },
                         modifier = Modifier.fillMaxWidth().height(60.dp),
                         shape = RoundedCornerShape(16.dp),
-                        enabled = participantFiles.isNotEmpty() && !isLoading
+                        enabled = participantFiles.isNotEmpty() && !isLoading && templateFile != null
                     ) {
                         if (isLoading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 3.dp)
                         else Text("EXECUTE ANALYSIS", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -204,8 +212,14 @@ fun NavButton(text: String, icon: androidx.compose.ui.graphics.vector.ImageVecto
 fun OverallLeaderboard(rankings: List<Pair<String, ScoreBreakdown>>, onSelect: (Pair<String, ScoreBreakdown>) -> Unit) {
     Text("World Cup Leaderboard", style = MaterialTheme.typography.h3, fontWeight = FontWeight.Black)
     Spacer(modifier = Modifier.height(32.dp))
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        items(rankings) { item -> RankingCard(item, onSelect) }
+    if (rankings.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No data analyzed. Select Template & Pool Files then click EXECUTE.", color = Color.Gray)
+        }
+    } else {
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            items(rankings) { item -> RankingCard(item, onSelect) }
+        }
     }
 }
 

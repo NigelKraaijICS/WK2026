@@ -10,16 +10,14 @@ class ScoringEngine {
         val advancementScores = mutableListOf<AdvancementScoreInfo>()
         val roundSummaries = mutableMapOf<Round, Int>()
 
-        // 1. Match Scores (Outcome and Exact Score)
-        participant.predictions.filter { it.round != Round.CHAMPION }.forEach { prediction ->
+        // 1. Match Scores (Outcome and Exact Score) - Applies only to Group Stage as per user request
+        participant.predictions.filter { it.round == Round.GROUP }.forEach { prediction ->
             val actual = actualResults.find { it.id == prediction.id }
             var pointsForMatch = 0
             val explanations = mutableListOf<String>()
 
-            // Only score if BOTH have results
             if (actual != null && actual.goals1 != null && actual.goals2 != null &&
-                prediction.goals1 != null && prediction.goals2 != null &&
-                actual.team1 == prediction.team1 && actual.team2 == prediction.team2) {
+                prediction.goals1 != null && prediction.goals2 != null) {
 
                 val actualResult = compareValues(actual.goals1, actual.goals2)
                 val predResult = compareValues(prediction.goals1, prediction.goals2)

@@ -26,6 +26,10 @@ class ScoringEngineTest {
         val engine = ScoringEngine()
         val breakdown = engine.calculateScoreBreakdown(participant, actualResults)
 
+        // Match 1: 5 pts
+        // Advancement R32: 2 pts
+        // Champion: 10 pts
+        // Total: 17
         assertEquals(17, breakdown.totalScore)
     }
 
@@ -47,7 +51,7 @@ class ScoringEngineTest {
     }
 
     @Test
-    fun testExactScoreInKO() {
+    fun testNoExactScoreInKO() {
         val teamA = Team("A")
         val teamB = Team("B")
         val actualResults = listOf(
@@ -59,9 +63,11 @@ class ScoringEngineTest {
 
         val engine = ScoringEngine()
         val breakdown = engine.calculateScoreBreakdown(participant, actualResults)
-        // Match points: 2 (win) + 3 (exact) = 5
+
+        // Rule: After group stage, only advancement matters.
+        // Match points: 0
         // Advancement: 2 (teamA reached R32) + 2 (teamB reached R32) = 4
-        // Total: 9
-        assertEquals(9, breakdown.totalScore)
+        // Total: 4
+        assertEquals(4, breakdown.totalScore)
     }
 }
