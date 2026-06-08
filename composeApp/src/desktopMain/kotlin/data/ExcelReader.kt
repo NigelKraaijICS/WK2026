@@ -76,38 +76,43 @@ class ExcelReader {
 
         val predictions = mutableListOf<Match>()
 
-        // Find block start column
-        val isMaster = participantName == "Results"
-        var colOffset = if (isMaster) 1 else -1
-
-        if (!isMaster) {
-            val nameRow = sheet.getRow(2) // Row 3
-            if (nameRow != null) {
-                for (c in 1..200) {
-                    val n = getCellValueAsString(nameRow.getCell(c))
-                    if (n?.equals(participantName, ignoreCase = true) == true) {
-                        colOffset = c - 1 // Start of block (Score 1 column)
-                        break
-                    }
+        // 1. Find the column block for the participant
+        var blockStartCol = -1
+        val nameRow = sheet.getRow(2) // Row 3
+        if (nameRow != null) {
+            for (c in 1..200) {
+                val n = getCellValueAsString(nameRow.getCell(c))
+                if (n?.equals(participantName, ignoreCase = true) == true) {
+                    blockStartCol = c
+                    break
                 }
             }
-            if (colOffset == -1) colOffset = 8 // Default to Anna if not found
         }
 
-        // 1. Group Stage (Rows 6 to 87)
+        // If not found, and name is "Results", try "Correct Results" or index 1
+        if (blockStartCol == -1 && participantName == "Results") blockStartCol = 1
+        // Default to Anna if still not found
+        if (blockStartCol == -1) blockStartCol = 8
+
+        // Based on analysis:
+        // C(blockStartCol): ID/Title (usually empty in data rows)
+        // C(blockStartCol + 1): Score 1
+        // C(blockStartCol + 2): Team 1 Name
+        // C(blockStartCol + 3): Score 2
+        // C(blockStartCol + 4): Team 2 Name
+
+        // 1. Group Stage: Rows 6 to 87
         for (i in 5..86) {
             val row = sheet.getRow(i) ?: continue
-            // Identify match by Teams since ID column is only in block 0
-            val t1n = getCellValueAsString(row.getCell(colOffset + 1))
-            val t2n = getCellValueAsString(row.getCell(colOffset + 3))
-            val s1 = getCellValueAsInt(row.getCell(colOffset))
-            val s2 = getCellValueAsInt(row.getCell(colOffset + 2))
+            val t1n = getCellValueAsString(row.getCell(blockStartCol + 2))
+            val t2n = getCellValueAsString(row.getCell(blockStartCol + 4))
+            val s1 = getCellValueAsInt(row.getCell(blockStartCol + 1))
+            val s2 = getCellValueAsInt(row.getCell(blockStartCol + 3))
 
-            if (t1n != null && t2n != null) {
+            if (t1n != null && t2n != null && t1n.isNotBlank() && t2n.isNotBlank()) {
                 val team1 = Team(t1n)
                 val team2 = Team(t2n)
 
-                // Find match in structure
                 val matchStruct = structure.find {
                     it.round == Round.GROUP &&
                     ((it.team1 == team1 && it.team2 == team2) || (it.team1 == team2 && it.team2 == team1))
@@ -120,33 +125,47 @@ class ExcelReader {
             }
         }
 
-        // 2. Knockout Stage (Match 73 starts Row 90)
-        for (i in 89..123) {
+        // 2. Knockout Stage: Row 90 onwards
+        for (i in 89..124) {
             val row = sheet.getRow(i) ?: continue
-            val matchId = i - 89 + 73
-            val matchStruct = structure.find { it.id == matchId } ?: continue
+            val t1n = getCellValueAsString(row.getCell(blockStartCol + 2))
+            val t2n = getCellValueAsString(row.getCell(blockStartCol + 4))
+            val s1 = getCellValueAsInt(row.getCell(blockStartCol + 1))
+            val s2 = getCellValueAsInt(row.getCell(blockStartCol + 3))
 
-            // Scores at offset +8 and +9 (e.g. Anna starts C9, scores at C17,C18)
-            val s1 = getCellValueAsInt(row.getCell(colOffset + 8))
-            val s2 = getCellValueAsInt(row.getCell(colOffset + 9))
+            if (t1n != null && t1n.isNotBlank() && t2n != null && t2n.isNotBlank()) {
+                // Match ID based on round/offset
+                val matchId = when {
+                    i <= 104 -> 73 + (i - 89)
+                    i <= 113 -> 89 + (i - 106)
+                    i <= 118 -> 97 + (i - 115)
+                    i <= 121 -> 101 + (i - 120)
+                    i == 124 -> 104
+                    else -> 0
+                }
 
-            // Teams for participants are usually at B+1, B+3 (formulas)
-            val t1n = getCellValueAsString(row.getCell(colOffset + 1))
-            val t2n = getCellValueAsString(row.getCell(colOffset + 3))
-
-            predictions.add(matchStruct.copy(
-                team1 = t1n?.takeIf { it.isNotBlank() }?.let { Team(it) } ?: matchStruct.team1,
-                team2 = t2n?.takeIf { it.isNotBlank() }?.let { Team(it) } ?: matchStruct.team2,
-                goals1 = s1,
-                goals2 = s2
-            ))
+                if (matchId > 0) {
+                    val matchStruct = structure.find { it.id == matchId }
+                    predictions.add(Match(
+                        id = matchId,
+                        team1Placeholder = matchStruct?.team1Placeholder ?: "",
+                        team2Placeholder = matchStruct?.team2Placeholder ?: "",
+                        team1 = Team(t1n),
+                        team2 = Team(t2n),
+                        goals1 = s1,
+                        goals2 = s2,
+                        round = matchStruct?.round ?: Round.GROUP,
+                        date = matchStruct?.date
+                    ))
+                }
+            }
         }
 
-        // 3. World Champion (Row 128)
+        // 3. World Champion (Row 128 - index 127)
         val championRow = sheet.getRow(127)
         if (championRow != null) {
-            val champName = getCellValueAsString(championRow.getCell(colOffset + 1))
-            if (champName != null && champName.isNotBlank()) {
+            val champName = getCellValueAsString(championRow.getCell(blockStartCol + 2)) ?: getCellValueAsString(championRow.getCell(blockStartCol))
+            if (champName != null && champName != "World Champion" && champName.isNotBlank()) {
                 predictions.add(Match(1000, "", "", Team(champName), null, 1, 0, Round.CHAMPION))
             }
         }
