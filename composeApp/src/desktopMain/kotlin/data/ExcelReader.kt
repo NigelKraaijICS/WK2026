@@ -69,6 +69,42 @@ class ExcelReader {
         }, allMatches)
     }
 
+    fun readMasterResults(inputStream: InputStream, structure: List<Match>): List<Match> {
+        val workbook = WorkbookFactory.create(inputStream)
+        val sheet = workbook.getSheet("World Cup") ?: return emptyList()
+
+        val results = mutableListOf<Match>()
+
+        // Scan the sheet for match IDs and their associated scores
+        // Based on user feedback: ID at (R, C), Scores at (R+3, C+1) and (R+3, C+2)
+        for (r in 0..200) {
+            val row = sheet.getRow(r) ?: continue
+            for (c in 0..50) {
+                val cell = row.getCell(c)
+                val matchId = getCellValueAsInt(cell)
+
+                if (matchId != null && matchId > 0 && matchId <= 104) {
+                    val matchStruct = structure.find { it.id == matchId }
+                    val scoreRow = sheet.getRow(r + 3)
+                    if (scoreRow != null) {
+                        val s1 = getCellValueAsInt(scoreRow.getCell(c + 1))
+                        val s2 = getCellValueAsInt(scoreRow.getCell(c + 2))
+
+                        if (matchStruct != null) {
+                            results.add(matchStruct.copy(goals1 = s1, goals2 = s2))
+                        } else {
+                            // Even if not in structure (shouldn't happen), record it
+                            results.add(Match(matchId, "", "", null, null, s1, s2, Round.GROUP))
+                        }
+                    }
+                }
+            }
+        }
+
+        workbook.close()
+        return results
+    }
+
     fun readParticipant(inputStream: InputStream, structure: List<Match>, participantName: String): Participant {
         val workbook = WorkbookFactory.create(inputStream)
         val sheet = workbook.getSheet("Predictions_1") ?: workbook.getSheet("Predictions_2")
@@ -77,25 +113,19 @@ class ExcelReader {
         val predictions = mutableListOf<Match>()
 
         var blockStartCol = -1
-        val isMaster = participantName == "Results"
-
-        if (isMaster) {
-            blockStartCol = 1
-        } else {
-            val nameRow = sheet.getRow(2)
-            if (nameRow != null) {
-                for (c in 1..200) {
-                    val n = getCellValueAsString(nameRow.getCell(c))
-                    if (n?.equals(participantName, ignoreCase = true) == true) {
-                        blockStartCol = c
-                        break
-                    }
+        val nameRow = sheet.getRow(2)
+        if (nameRow != null) {
+            for (c in 1..200) {
+                val n = getCellValueAsString(nameRow.getCell(c))
+                if (n?.equals(participantName, ignoreCase = true) == true) {
+                    blockStartCol = c - 1 // The block usually starts with the score column
+                    break
                 }
             }
-            if (blockStartCol == -1) blockStartCol = 8
         }
+        if (blockStartCol == -1) blockStartCol = 8
 
-        // Group Stage
+        // 1. Group Stage
         for (i in 5..86) {
             val row = sheet.getRow(i) ?: continue
             val t1n = getCellValueAsString(row.getCell(blockStartCol + 1))
@@ -108,9 +138,10 @@ class ExcelReader {
                 val team1 = Team(t1n)
                 val team2 = Team(t2n)
 
-                // CRITICAL: Filter out Team IDs (15, 60, etc) that act as placeholders in the template
-                // Scores in real world are rarely > 10, especially in a tournament template.
-                // We'll treat any score > 10 as "not filled" (null) because they represent Team Nos.
+                // Keep the heuristic but make it more lenient or specific
+                // If the value is > 100, it's definitely an ID in this template.
+                // Actually, let's just accept what's there but if it matches the structure exactly and it's large, maybe ignore.
+                // For now, let's just use a simple threshold of 10 unless it's the master results.
                 val s1 = if (rawS1 != null && rawS1 > 10) null else rawS1
                 val s2 = if (rawS2 != null && rawS2 > 10) null else rawS2
 
@@ -126,49 +157,31 @@ class ExcelReader {
             }
         }
 
-        // Knockout Stage
+        // 2. Knockout Stage
         for (i in 89..123) {
             val row = sheet.getRow(i) ?: continue
+            val matchId = i - 89 + 73
+            val matchStruct = structure.find { it.id == matchId } ?: continue
+
+            val s1 = getCellValueAsInt(row.getCell(blockStartCol + 8))
+            val s2 = getCellValueAsInt(row.getCell(blockStartCol + 9))
+
             val t1n = getCellValueAsString(row.getCell(blockStartCol + 1))
             val t2n = getCellValueAsString(row.getCell(blockStartCol + 3))
-            val rawS1 = getCellValueAsInt(row.getCell(blockStartCol + 8))
-            val rawS2 = getCellValueAsInt(row.getCell(blockStartCol + 9))
 
-            if (t1n != null && t1n.isNotBlank() && t2n != null && t2n.isNotBlank()) {
-                val s1 = if (rawS1 != null && rawS1 > 10) null else rawS1
-                val s2 = if (rawS2 != null && rawS2 > 10) null else rawS2
-
-                val matchId = when {
-                    i <= 104 -> 73 + (i - 89)
-                    i <= 113 -> 89 + (i - 106)
-                    i <= 118 -> 97 + (i - 115)
-                    i <= 121 -> 101 + (i - 120)
-                    i == 124 -> 104
-                    else -> 0
-                }
-
-                if (matchId > 0) {
-                    val matchStruct = structure.find { it.id == matchId }
-                    predictions.add(Match(
-                        id = matchId,
-                        team1Placeholder = matchStruct?.team1Placeholder ?: "",
-                        team2Placeholder = matchStruct?.team2Placeholder ?: "",
-                        team1 = Team(t1n),
-                        team2 = Team(t2n),
-                        goals1 = s1,
-                        goals2 = s2,
-                        round = matchStruct?.round ?: Round.GROUP,
-                        date = matchStruct?.date
-                    ))
-                }
-            }
+            predictions.add(matchStruct.copy(
+                team1 = t1n?.takeIf { it.isNotBlank() }?.let { Team(it) } ?: matchStruct.team1,
+                team2 = t2n?.takeIf { it.isNotBlank() }?.let { Team(it) } ?: matchStruct.team2,
+                goals1 = if (s1 != null && s1 > 10) null else s1,
+                goals2 = if (s2 != null && s2 > 10) null else s2
+            ))
         }
 
-        // World Champion
+        // 3. World Champion
         val championRow = sheet.getRow(127)
         if (championRow != null) {
-            val champName = getCellValueAsString(championRow.getCell(blockStartCol + 2)) ?: getCellValueAsString(championRow.getCell(blockStartCol))
-            if (champName != null && champName != "World Champion" && champName.isNotBlank()) {
+            val champName = getCellValueAsString(championRow.getCell(blockStartCol + 1))
+            if (champName != null && champName.isNotBlank() && champName != "World Champion") {
                 predictions.add(Match(1000, "", "", Team(champName), null, 1, 0, Round.CHAMPION))
             }
         }
