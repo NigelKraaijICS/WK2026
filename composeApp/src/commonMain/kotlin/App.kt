@@ -119,7 +119,7 @@ fun App() {
                     Button(
                         onClick = {
                             isLoading = true
-                            statusMessage = "Processing Analytics..."
+                            statusMessage = "Syncing & Calculating..."
                             Thread {
                                 try {
                                     val structureFile = File("WK-pool.xlsx")
@@ -151,7 +151,7 @@ fun App() {
                                     }.sortedByDescending { it.second.totalScore }
 
                                     rankings = results
-                                    statusMessage = "Analysis Ready"
+                                    statusMessage = "Update Successful"
                                 } catch (e: Exception) {
                                     e.printStackTrace()
                                     statusMessage = "Error: ${e.message}"
@@ -165,7 +165,7 @@ fun App() {
                         enabled = participantFiles.isNotEmpty() && !isLoading
                     ) {
                         if (isLoading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 3.dp)
-                        else Text("RUN ENGINE", fontWeight = FontWeight.Bold)
+                        else Text("EXECUTE ANALYSIS", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                     }
                 }
 
@@ -319,7 +319,7 @@ fun DetailedMatchRankingCard(name: String, info: MatchScoreInfo) {
         Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(name, fontWeight = FontWeight.Bold)
-                Text("Pred: ${info.predictedGoals1}-${info.predictedGoals2} | ${info.explanation}", style = MaterialTheme.typography.caption, color = Color.Gray)
+                Text("Pred: ${info.predictedGoals1 ?: "-"}-${info.predictedGoals2 ?: "-"} | ${info.explanation}", style = MaterialTheme.typography.caption, color = Color.Gray)
             }
             Text("+${info.points}", style = MaterialTheme.typography.h5, fontWeight = FontWeight.Black, color = if (info.points > 0) SuccessGreen else Color.Gray)
         }
@@ -373,8 +373,10 @@ fun RankingCard(item: Pair<String, ScoreBreakdown>, onClick: (Pair<String, Score
 fun DetailedMatchCard(info: MatchScoreInfo) {
     Card(backgroundColor = SurfaceGray, shape = RoundedCornerShape(16.dp)) {
         Column(modifier = Modifier.fillMaxWidth().padding(20.dp)) {
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("MATCH ${info.match.id}", color = PrimaryGold, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(info.match.date?.toString()?.replace("T", " ")?.take(16) ?: "", style = MaterialTheme.typography.caption, color = Color.Gray)
                 Spacer(modifier = Modifier.weight(1f))
                 Text(info.match.round.displayName.uppercase(), style = MaterialTheme.typography.overline, color = Color.Gray)
             }
@@ -384,11 +386,11 @@ fun DetailedMatchCard(info: MatchScoreInfo) {
                     Text(info.match.team1?.name ?: "TBD", fontWeight = FontWeight.Bold)
                     Text(info.match.team2?.name ?: "TBD", fontWeight = FontWeight.Bold)
                 }
-                ScoreBlock("REAL", info.match.goals1, info.match.goals2, PrimaryGold)
+                ScoreBlock("REAL RESULT", info.match.goals1, info.match.goals2, PrimaryGold)
                 Spacer(modifier = Modifier.width(20.dp))
-                ScoreBlock("PRED", info.predictedGoals1, info.predictedGoals2, Color.White)
+                ScoreBlock("PREDICTION", info.predictedGoals1, info.predictedGoals2, Color.White)
                 Spacer(modifier = Modifier.width(32.dp))
-                Text("+${info.points}", color = if (info.points > 0) SuccessGreen else Color.Gray, fontWeight = FontWeight.Black, fontSize = 20.sp)
+                Text("+${info.points}", color = if (info.points > 0) SuccessGreen else Color.Gray, fontWeight = FontWeight.Black, fontSize = 24.sp)
             }
             Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color.DarkGray)
             Text(info.explanation, style = MaterialTheme.typography.caption, color = Color.LightGray)
@@ -400,8 +402,8 @@ fun DetailedMatchCard(info: MatchScoreInfo) {
 fun ScoreBlock(label: String, s1: Int?, s2: Int?, color: Color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, style = MaterialTheme.typography.overline, color = Color.Gray, fontSize = 8.sp)
-        Text("${s1 ?: "-"}", color = color, fontWeight = FontWeight.Black, fontSize = 16.sp)
-        Text("${s2 ?: "-"}", color = color, fontWeight = FontWeight.Black, fontSize = 16.sp)
+        Text("${s1 ?: "-"}", color = color, fontWeight = FontWeight.Black, fontSize = 18.sp)
+        Text("${s2 ?: "-"}", color = color, fontWeight = FontWeight.Black, fontSize = 18.sp)
     }
 }
 

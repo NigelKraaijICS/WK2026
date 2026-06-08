@@ -76,14 +76,13 @@ class ExcelReader {
 
         val predictions = mutableListOf<Match>()
 
-        // 1. Determine column offset for this participant
         var blockStartCol = -1
         val isMaster = participantName == "Results"
 
         if (isMaster) {
-            blockStartCol = 1 // "Correct Results" block starts at Col B
+            blockStartCol = 1
         } else {
-            val nameRow = sheet.getRow(2) // Row 3
+            val nameRow = sheet.getRow(2)
             if (nameRow != null) {
                 for (c in 1..200) {
                     val n = getCellValueAsString(nameRow.getCell(c))
@@ -93,90 +92,83 @@ class ExcelReader {
                     }
                 }
             }
-            if (blockStartCol == -1) blockStartCol = 8 // Default to Anna
+            if (blockStartCol == -1) blockStartCol = 8
         }
 
-        // Relative offsets within a participant block (e.g., Anna's block I:U, index 8:20)
-        // Match 1 Row 6 (Index 5):
-        // Col I (8): Score 1 (15 - which is Team ID México)
-        // Col J (9): Team 1 Name (México)
-        // Col K (10): Score 2 (60 - which is Team ID South Africa)
-        // Col L (11): Team 2 Name (South Africa)
-
-        // Wait, the user says "I expect 1-1 and not 15-60".
-        // 15 and 60 are actually the internal Team IDs.
-        // If the participant HAS filled in a score, it will OVERWRITE these values in the cells.
-        // So I should read from these same columns, but I must be careful not to treat IDs as scores.
-
-        // 1. Group Stage (Rows 6 to 87)
+        // Group Stage
         for (i in 5..86) {
             val row = sheet.getRow(i) ?: continue
-            val idStr = getCellValueAsString(row.getCell(1))
-            if (idStr == null || !idStr.all { it.isDigit() }) continue
-            val matchId = idStr.toInt()
-            if (matchId > 72) continue
-
-            val matchStruct = structure.find { it.id == matchId } ?: continue
-
-            // Read potential scores and team names from the participant's block
-            val rawS1 = getCellValueAsInt(row.getCell(blockStartCol))
             val t1n = getCellValueAsString(row.getCell(blockStartCol + 1))
-            val rawS2 = getCellValueAsInt(row.getCell(blockStartCol + 2))
             val t2n = getCellValueAsString(row.getCell(blockStartCol + 3))
 
-            if (t1n != null && t2n != null) {
+            val rawS1 = getCellValueAsInt(row.getCell(blockStartCol))
+            val rawS2 = getCellValueAsInt(row.getCell(blockStartCol + 2))
+
+            if (t1n != null && t2n != null && t1n.isNotBlank() && t2n.isNotBlank()) {
                 val team1 = Team(t1n)
                 val team2 = Team(t2n)
 
-                // Heuristic: If the score is exactly equal to the team's internal ID from Groups sheet,
-                // it's probably an unfilled placeholder. Mexico ID is 15, South Africa is 60.
-                // However, if the user explicitly enters 15-60, we might misinterpret it.
-                // But usually, scores are small (0-9).
-                // Let's assume scores > 10 in the template are IDs if the match is not "played" yet.
+                // CRITICAL: Filter out Team IDs (15, 60, etc) that act as placeholders in the template
+                // Scores in real world are rarely > 10, especially in a tournament template.
+                // We'll treat any score > 10 as "not filled" (null) because they represent Team Nos.
+                val s1 = if (rawS1 != null && rawS1 > 10) null else rawS1
+                val s2 = if (rawS2 != null && rawS2 > 10) null else rawS2
 
-                val s1 = if (rawS1 != null && rawS1 > 10 && !isMaster) null else rawS1
-                val s2 = if (rawS2 != null && rawS2 > 10 && !isMaster) null else rawS2
+                val matchStruct = structure.find {
+                    it.round == Round.GROUP &&
+                    ((it.team1 == team1 && it.team2 == team2) || (it.team1 == team2 && it.team2 == team1))
+                }
 
-                // Align scores with structure's team order
-                val (finalS1, finalS2) = if (matchStruct.team1 == team1) s1 to s2 else if (matchStruct.team1 == team2) s2 to s1 else s1 to s2
-
-                predictions.add(matchStruct.copy(
-                    goals1 = finalS1,
-                    goals2 = finalS2
-                ))
+                if (matchStruct != null) {
+                    val (finalS1, finalS2) = if (matchStruct.team1 == team1) s1 to s2 else s2 to s1
+                    predictions.add(matchStruct.copy(goals1 = finalS1, goals2 = finalS2))
+                }
             }
         }
 
-        // 2. Knockout Stage (Match 73 starts Row 90)
+        // Knockout Stage
         for (i in 89..123) {
             val row = sheet.getRow(i) ?: continue
-            val matchId = i - 89 + 73
-            val matchStruct = structure.find { it.id == matchId } ?: continue
-
-            // For KO, the block seems different.
-            // Anna block I:U (8:20).
-            // In row 90, C17, C18 were 0. (Index 16, 17).
-            // That's offset +8 and +9 from blockStartCol (8).
-            val s1 = getCellValueAsInt(row.getCell(blockStartCol + 8))
-            val s2 = getCellValueAsInt(row.getCell(blockStartCol + 9))
-
-            // Teams for participants are usually at blockStartCol + 1 and blockStartCol + 3
             val t1n = getCellValueAsString(row.getCell(blockStartCol + 1))
             val t2n = getCellValueAsString(row.getCell(blockStartCol + 3))
+            val rawS1 = getCellValueAsInt(row.getCell(blockStartCol + 8))
+            val rawS2 = getCellValueAsInt(row.getCell(blockStartCol + 9))
 
-            predictions.add(matchStruct.copy(
-                team1 = t1n?.takeIf { it.isNotBlank() }?.let { Team(it) } ?: matchStruct.team1,
-                team2 = t2n?.takeIf { it.isNotBlank() }?.let { Team(it) } ?: matchStruct.team2,
-                goals1 = s1,
-                goals2 = s2
-            ))
+            if (t1n != null && t1n.isNotBlank() && t2n != null && t2n.isNotBlank()) {
+                val s1 = if (rawS1 != null && rawS1 > 10) null else rawS1
+                val s2 = if (rawS2 != null && rawS2 > 10) null else rawS2
+
+                val matchId = when {
+                    i <= 104 -> 73 + (i - 89)
+                    i <= 113 -> 89 + (i - 106)
+                    i <= 118 -> 97 + (i - 115)
+                    i <= 121 -> 101 + (i - 120)
+                    i == 124 -> 104
+                    else -> 0
+                }
+
+                if (matchId > 0) {
+                    val matchStruct = structure.find { it.id == matchId }
+                    predictions.add(Match(
+                        id = matchId,
+                        team1Placeholder = matchStruct?.team1Placeholder ?: "",
+                        team2Placeholder = matchStruct?.team2Placeholder ?: "",
+                        team1 = Team(t1n),
+                        team2 = Team(t2n),
+                        goals1 = s1,
+                        goals2 = s2,
+                        round = matchStruct?.round ?: Round.GROUP,
+                        date = matchStruct?.date
+                    ))
+                }
+            }
         }
 
-        // 3. World Champion (Row 128)
+        // World Champion
         val championRow = sheet.getRow(127)
         if (championRow != null) {
-            val champName = getCellValueAsString(championRow.getCell(blockStartCol + 1))
-            if (champName != null && champName.isNotBlank() && champName != "World Champion") {
+            val champName = getCellValueAsString(championRow.getCell(blockStartCol + 2)) ?: getCellValueAsString(championRow.getCell(blockStartCol))
+            if (champName != null && champName != "World Champion" && champName.isNotBlank()) {
                 predictions.add(Match(1000, "", "", Team(champName), null, 1, 0, Round.CHAMPION))
             }
         }
