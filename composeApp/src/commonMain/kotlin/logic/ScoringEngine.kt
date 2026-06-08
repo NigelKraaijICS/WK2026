@@ -16,6 +16,7 @@ class ScoringEngine {
             var pointsForMatch = 0
             val explanations = mutableListOf<String>()
 
+            // Only score if BOTH have results
             if (actual != null && actual.goals1 != null && actual.goals2 != null &&
                 prediction.goals1 != null && prediction.goals2 != null &&
                 actual.team1 == prediction.team1 && actual.team2 == prediction.team2) {
@@ -33,7 +34,11 @@ class ScoringEngine {
                 }
             }
 
-            if (explanations.isEmpty()) explanations.add("No points earned")
+            if (explanations.isEmpty()) {
+                if (actual?.goals1 == null) explanations.add("Match not yet played")
+                else if (prediction.goals1 == null) explanations.add("No prediction made")
+                else explanations.add("No points earned")
+            }
 
             totalScore += pointsForMatch
             if (actual != null) {
