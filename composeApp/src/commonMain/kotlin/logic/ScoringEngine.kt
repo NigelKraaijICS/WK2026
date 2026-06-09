@@ -4,19 +4,19 @@ import model.*
 
 class ScoringEngine {
 
-    fun calculateScoreBreakdown(participant: Participant, actualResults: List<Match>): ScoreBreakdown {
+    fun calculateScoreBreakdown(participant: Participant, actualResults: List<Match>, enabledRounds: Set<Round>): ScoreBreakdown {
         var totalScore = 0
         val matchScores = mutableListOf<MatchScoreInfo>()
         val advancementScores = mutableListOf<AdvancementScoreInfo>()
         val roundSummaries = mutableMapOf<Round, Int>()
 
-        // 1. Match Scores (Outcome and Exact Score) - Applies only to Group Stage as per user request
+        // 1. Match Scores (Outcome and Exact Score) - Group Stage logic
         participant.predictions.filter { it.round == Round.GROUP }.forEach { prediction ->
             val actual = actualResults.find { it.id == prediction.id }
             var pointsForMatch = 0
             val explanations = mutableListOf<String>()
 
-            if (actual != null && actual.goals1 != null && actual.goals2 != null &&
+            if (enabledRounds.contains(Round.GROUP) && actual != null && actual.goals1 != null && actual.goals2 != null &&
                 prediction.goals1 != null && prediction.goals2 != null) {
 
                 val actualResult = compareValues(actual.goals1, actual.goals2)
@@ -33,8 +33,9 @@ class ScoringEngine {
             }
 
             if (explanations.isEmpty()) {
-                if (actual?.goals1 == null) explanations.add("Match not yet played")
-                else if (prediction.goals1 == null) explanations.add("No prediction made")
+                if (actual?.goals1 == null) explanations.add("Match result missing in Master Excel")
+                else if (prediction.goals1 == null) explanations.add("No prediction in file")
+                else if (!enabledRounds.contains(Round.GROUP)) explanations.add("Stage not selected for calculation")
                 else explanations.add("No points earned")
             }
 
@@ -59,7 +60,7 @@ class ScoringEngine {
             val predictedTeams = getTeamsAtRound(participant.predictions, round)
 
             predictedTeams.forEach { team ->
-                if (actualTeams.contains(team)) {
+                if (enabledRounds.contains(round) && actualTeams.contains(team)) {
                     val pts = round.points
                     totalScore += pts
                     advancementScores.add(AdvancementScoreInfo(team, round, pts, "Correctly predicted ${team.name} to reach ${round.displayName} (+ $pts)"))
@@ -71,7 +72,7 @@ class ScoringEngine {
         // 3. World Champion
         val actualChampion = actualResults.find { it.round == Round.CHAMPION }?.team1
         val predictedChampion = participant.predictions.find { it.round == Round.CHAMPION }?.team1
-        if (actualChampion != null && actualChampion == predictedChampion) {
+        if (enabledRounds.contains(Round.CHAMPION) && actualChampion != null && actualChampion == predictedChampion) {
             val pts = Round.CHAMPION.points
             totalScore += pts
             advancementScores.add(AdvancementScoreInfo(actualChampion, Round.CHAMPION, pts, "Correctly predicted World Champion (+ $pts)"))

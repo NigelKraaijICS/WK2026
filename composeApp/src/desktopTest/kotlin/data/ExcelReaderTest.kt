@@ -17,8 +17,9 @@ class ExcelReaderTest {
         }
 
         val reader = ExcelReader()
+        val anchors = reader.discoverAnchors(excelFile.inputStream())
         val (groups, structure) = reader.readTournamentStructure(excelFile.inputStream())
-        val participant = reader.readParticipantFromFile(excelFile.inputStream(), structure, "TestFile")
+        val participant = reader.readParticipantFromFile(excelFile.inputStream(), structure, "TestFile", anchors)
 
         assertEquals("TestFile", participant.name)
         assertTrue(participant.predictions.isNotEmpty())

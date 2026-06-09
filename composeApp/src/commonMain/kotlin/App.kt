@@ -48,7 +48,7 @@ fun App() {
     var selectedRoundFilter by remember { mutableStateOf<Round?>(null) }
     var selectedMatchId by remember { mutableStateOf<Int?>(null) }
     var tournamentStructure by remember { mutableStateOf<List<Match>>(emptyList()) }
-    var onlyCalculatePastGames by remember { mutableStateOf(false) }
+    var selectedRounds by remember { mutableStateOf(Round.values().toSet()) }
 
     val reader = remember { ExcelReader() }
     val tournamentLogic = remember { TournamentLogic() }
@@ -100,10 +100,16 @@ fun App() {
                         Text("${participantFiles.size} participants loaded", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = onlyCalculatePastGames, onCheckedChange = { onlyCalculatePastGames = it }, colors = CheckboxDefaults.colors(checkedColor = PrimaryGold))
-                        Text("Only past games", color = Color.LightGray, fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(24.dp))
+                    SectionHeader("CALCULATE STAGES")
+                    Round.values().forEach { round ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
+                            selectedRounds = if (selectedRounds.contains(round)) selectedRounds - round else selectedRounds + round
+                        }.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Checkbox(checked = selectedRounds.contains(round), onCheckedChange = null, colors = CheckboxDefaults.colors(checkedColor = PrimaryGold))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(round.displayName, color = Color.LightGray, fontSize = 12.sp)
+                        }
                     }
 
                     Spacer(modifier = Modifier.weight(1f))
@@ -122,25 +128,19 @@ fun App() {
                                     if (!templateFile.exists()) throw Exception("Template WK-pool.xlsx not found")
                                     val masterFile = resultsFile ?: throw Exception("Please select a Master Results file")
 
+                                    val anchors = reader.discoverAnchors(templateFile.inputStream())
                                     val (groups, structureMatches) = reader.readTournamentStructure(templateFile.inputStream())
                                     tournamentStructure = structureMatches
 
-                                    val resultProvider = ExcelResultProvider(masterFile.inputStream(), structureMatches)
-                                    val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
-                                    var rawResults = resultProvider.getResults()
-
-                                    if (onlyCalculatePastGames) {
-                                        rawResults = rawResults.map { m ->
-                                            if (m.date != null && m.date > now) m.copy(goals1 = null, goals2 = null) else m
-                                        }
-                                    }
+                                    val resultProvider = ExcelResultProvider(masterFile.inputStream(), structureMatches, anchors)
+                                    val rawResults = resultProvider.getResults()
 
                                     val actualTournament = tournamentLogic.simulateTournament(structureMatches, groups, rawResults)
 
                                     val results = participantFiles.map { file ->
-                                        val p = reader.readParticipantFromFile(file.inputStream(), structureMatches, file.nameWithoutExtension)
+                                        val p = reader.readParticipantFromFile(file.inputStream(), structureMatches, file.nameWithoutExtension, anchors)
                                         val pTournament = tournamentLogic.simulateTournament(structureMatches, groups, p.predictions)
-                                        p.name to scoringEngine.calculateScoreBreakdown(Participant(p.name, pTournament), actualTournament)
+                                        p.name to scoringEngine.calculateScoreBreakdown(Participant(p.name, pTournament), actualTournament, selectedRounds)
                                     }.sortedByDescending { it.second.totalScore }
 
                                     rankings = results

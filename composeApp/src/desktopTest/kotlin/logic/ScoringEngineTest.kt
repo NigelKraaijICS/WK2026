@@ -24,12 +24,8 @@ class ScoringEngineTest {
         ))
 
         val engine = ScoringEngine()
-        val breakdown = engine.calculateScoreBreakdown(participant, actualResults)
+        val breakdown = engine.calculateScoreBreakdown(participant, actualResults, Round.values().toSet())
 
-        // Match 1: 5 pts
-        // Advancement R32: 2 pts
-        // Champion: 10 pts
-        // Total: 17
         assertEquals(17, breakdown.totalScore)
     }
 
@@ -46,7 +42,7 @@ class ScoringEngineTest {
         ))
 
         val engine = ScoringEngine()
-        val breakdown = engine.calculateScoreBreakdown(participant, actualResults)
+        val breakdown = engine.calculateScoreBreakdown(participant, actualResults, Round.values().toSet())
         assertEquals(5, breakdown.totalScore) // 2 (R32) + 3 (R16)
     }
 
@@ -62,7 +58,7 @@ class ScoringEngineTest {
         ))
 
         val engine = ScoringEngine()
-        val breakdown = engine.calculateScoreBreakdown(participant, actualResults)
+        val breakdown = engine.calculateScoreBreakdown(participant, actualResults, Round.values().toSet())
 
         // Rule: After group stage, only advancement matters.
         // Match points: 0

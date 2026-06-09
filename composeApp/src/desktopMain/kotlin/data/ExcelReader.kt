@@ -9,12 +9,9 @@ import kotlinx.datetime.*
 data class MatchAnchor(val id: Int, val row: Int, val col: Int)
 
 class ExcelReader {
-    private var anchors: List<MatchAnchor> = emptyList()
 
-    fun readTournamentStructure(inputStream: InputStream): Pair<List<Group>, List<Match>> {
+    fun discoverAnchors(inputStream: InputStream): List<MatchAnchor> {
         val workbook = WorkbookFactory.create(inputStream)
-
-        // 1. Discover anchors in "World Cup" sheet
         val wcSheet = workbook.getSheet("World Cup") ?: throw IllegalArgumentException("World Cup sheet not found")
         val foundAnchors = mutableListOf<MatchAnchor>()
         for (r in 0..250) {
@@ -27,9 +24,12 @@ class ExcelReader {
                 }
             }
         }
-        this.anchors = foundAnchors
+        workbook.close()
+        return foundAnchors
+    }
 
-        // 2. Read structure from "Matches" sheet
+    fun readTournamentStructure(inputStream: InputStream): Pair<List<Group>, List<Match>> {
+        val workbook = WorkbookFactory.create(inputStream)
         val sheet = workbook.getSheet("Matches") ?: throw IllegalArgumentException("Sheet Matches not found")
         val allMatches = mutableListOf<Match>()
         val groupsMap = mutableMapOf<String, MutableList<Match>>()
@@ -42,7 +42,6 @@ class ExcelReader {
             val matchId = matchIdStr.toInt()
             val t1p = getCellValueAsString(row.getCell(2)) ?: ""
             val t2p = getCellValueAsString(row.getCell(3)) ?: ""
-
             val t1n = getCellValueAsString(row.getCell(8))
             val t2n = getCellValueAsString(row.getCell(9))
 
@@ -55,16 +54,7 @@ class ExcelReader {
             } catch (e: Exception) { null }
 
             val round = getRoundForMatch(matchId)
-
-            val match = Match(
-                id = matchId,
-                team1Placeholder = t1p,
-                team2Placeholder = t2p,
-                team1 = t1n?.takeIf { it.isNotBlank() }?.let { Team(it) },
-                team2 = t2n?.takeIf { it.isNotBlank() }?.let { Team(it) },
-                round = round,
-                date = date
-            )
+            val match = Match(matchId, t1p, t2p, t1n?.takeIf { it.isNotBlank() }?.let { Team(it) }, t2n?.takeIf { it.isNotBlank() }?.let { Team(it) }, null, null, round, date)
             allMatches.add(match)
 
             if (round == Round.GROUP && t1p.isNotEmpty()) {
@@ -72,7 +62,6 @@ class ExcelReader {
                 groupsMap.getOrPut(groupName) { mutableListOf() }.add(match)
             }
         }
-
         workbook.close()
         return Pair(groupsMap.map { (name, matches) ->
             val teams = matches.flatMap { listOf(it.team1, it.team2) }.filterNotNull().distinct()
@@ -93,30 +82,25 @@ class ExcelReader {
         }
     }
 
-    fun readMasterResults(inputStream: InputStream, structure: List<Match>): List<Match> {
+    fun readMasterResults(inputStream: InputStream, structure: List<Match>, anchors: List<MatchAnchor>): List<Match> {
         val workbook = WorkbookFactory.create(inputStream)
         val sheet = workbook.getSheet("World Cup") ?: return emptyList()
-        val results = extractUsingAnchors(sheet, structure)
+        val results = extractUsingAnchors(sheet, structure, anchors)
         workbook.close()
         return results
     }
 
-    fun readParticipantFromFile(inputStream: InputStream, structure: List<Match>, filename: String): Participant {
+    fun readParticipantFromFile(inputStream: InputStream, structure: List<Match>, filename: String, anchors: List<MatchAnchor>): Participant {
         val workbook = WorkbookFactory.create(inputStream)
-
-        // Exclusively use "World Cup" sheet for predictions and scores
         val sheet = workbook.getSheet("World Cup") ?: throw IllegalArgumentException("World Cup sheet not found in $filename")
-        val matches = extractUsingAnchors(sheet, structure)
+        val matches = extractUsingAnchors(sheet, structure, anchors)
 
-        // Champion prediction - scan around the typical area
         var champion: Team? = null
         for (r in 80..180) {
             val row = sheet.getRow(r) ?: continue
             for (c in 0..40) {
-                val valStr = getCellValueAsString(row.getCell(c))
-                if (valStr?.contains("World Champion", ignoreCase = true) == true) {
-                    val teamName = getCellValueAsString(sheet.getRow(r + 1)?.getCell(c)) ?:
-                                   getCellValueAsString(sheet.getRow(r)?.getCell(c + 1))
+                if (getCellValueAsString(row.getCell(c))?.contains("World Champion", ignoreCase = true) == true) {
+                    val teamName = getCellValueAsString(sheet.getRow(r + 1)?.getCell(c)) ?: getCellValueAsString(sheet.getRow(r)?.getCell(c + 1))
                     if (teamName != null && teamName.isNotBlank() && !teamName.contains("World Champion")) {
                         champion = Team(teamName)
                     }
@@ -125,41 +109,31 @@ class ExcelReader {
             }
             if (champion != null) break
         }
-
         val finalMatches = if (champion != null) matches + Match(1000, "", "", champion, null, 1, 0, Round.CHAMPION) else matches
-
         workbook.close()
         return Participant(filename, finalMatches)
     }
 
-    private fun extractUsingAnchors(sheet: org.apache.poi.ss.usermodel.Sheet, structure: List<Match>): List<Match> {
+    private fun extractUsingAnchors(sheet: org.apache.poi.ss.usermodel.Sheet, structure: List<Match>, anchors: List<MatchAnchor>): List<Match> {
         val matches = mutableListOf<Match>()
         for (anchor in anchors) {
             val matchStruct = structure.find { it.id == anchor.id } ?: continue
-
-            // Teams at Row+2 relative to Match ID cell (e.g., ID at A11, Team Names at B13, C13)
             val teamRow = sheet.getRow(anchor.row + 2)
+            val scoreRow = sheet.getRow(anchor.row + 3)
+
             val t1v = getCellValueAsString(teamRow?.getCell(anchor.col + 1))
             val t2v = getCellValueAsString(teamRow?.getCell(anchor.col + 2))
-
-            // Scores at Row+3 relative to Match ID cell (e.g., ID at A11, Scores at B14, C14)
-            val scoreRow = sheet.getRow(anchor.row + 3)
             val s1v = getCellValueAsString(scoreRow?.getCell(anchor.col + 1))
             val s2v = getCellValueAsString(scoreRow?.getCell(anchor.col + 2))
 
             val team1 = t1v?.takeIf { it.isNotBlank() && !it.all { char -> char.isDigit() } }?.let { Team(it) } ?: matchStruct.team1
             val team2 = t2v?.takeIf { it.isNotBlank() && !it.all { char -> char.isDigit() } }?.let { Team(it) } ?: matchStruct.team2
 
-            // Goals - use numeric values. Avoid internal IDs (heuristic > 15)
-            val s1 = s1v?.toIntOrNull()?.takeIf { it < 15 }
-            val s2 = s2v?.toIntOrNull()?.takeIf { it < 15 }
+            // Scores - check if it's a numeric string.
+            val s1 = s1v?.toIntOrNull()
+            val s2 = s2v?.toIntOrNull()
 
-            matches.add(matchStruct.copy(
-                team1 = team1,
-                team2 = team2,
-                goals1 = s1,
-                goals2 = s2
-            ))
+            matches.add(matchStruct.copy(team1 = team1, team2 = team2, goals1 = s1, goals2 = s2))
         }
         return matches
     }

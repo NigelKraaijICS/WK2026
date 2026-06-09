@@ -1,14 +1,13 @@
 package data
 
 import model.Match
-import java.io.InputStream
 
 class ExcelResultProvider(
-    private val inputStream: InputStream,
-    private val structure: List<Match>
+    private val inputStream: java.io.InputStream,
+    private val structure: List<Match>,
+    private val anchors: List<MatchAnchor>
 ) : ResultProvider {
     override fun getResults(): List<Match> {
-        val reader = ExcelReader()
-        return reader.readMasterResults(inputStream, structure)
+        return ExcelReader().readMasterResults(inputStream, structure, anchors)
     }
 }
