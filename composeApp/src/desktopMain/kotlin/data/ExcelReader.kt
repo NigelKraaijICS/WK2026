@@ -101,43 +101,35 @@ class ExcelReader {
         return results
     }
 
-    fun readParticipantsFromFile(inputStream: InputStream, structure: List<Match>, filename: String): List<Participant> {
+    fun readParticipantFromFile(inputStream: InputStream, structure: List<Match>, filename: String): Participant {
         val workbook = WorkbookFactory.create(inputStream)
-        val participants = mutableListOf<Participant>()
 
-        for (i in 0 until workbook.numberOfSheets) {
-            val sheet = workbook.getSheetAt(i)
-            if (sheet.sheetName.startsWith("Predictions_", ignoreCase = true) && !sheet.sheetName.contains("Ranking")) {
-                var participantName = getCellValueAsString(sheet.getRow(2)?.getCell(8)) ?: filename
-                if (participantName.isEmpty() || participantName == "0") participantName = filename
+        // Always read from "World Cup" sheet as it's the primary input grid according to the user
+        val sheet = workbook.getSheet("World Cup") ?: throw IllegalArgumentException("World Cup sheet not found in $filename")
+        val matches = extractUsingAnchors(sheet, structure)
 
-                val matches = extractUsingAnchors(sheet, structure)
-
-                // Champion
-                var champion: Team? = null
-                for (r in 80..180) {
-                    val row = sheet.getRow(r) ?: continue
-                    for (c in 0..40) {
-                        val valStr = getCellValueAsString(row.getCell(c))
-                        if (valStr?.contains("World Champion", ignoreCase = true) == true) {
-                            val teamName = getCellValueAsString(sheet.getRow(r + 1)?.getCell(c)) ?:
-                                           getCellValueAsString(sheet.getRow(r)?.getCell(c + 1))
-                            if (teamName != null && teamName.isNotBlank() && !teamName.contains("World Champion")) {
-                                champion = Team(teamName)
-                            }
-                            break
-                        }
+        // Champion prediction - scan around the typical area
+        var champion: Team? = null
+        for (r in 80..180) {
+            val row = sheet.getRow(r) ?: continue
+            for (c in 0..40) {
+                val valStr = getCellValueAsString(row.getCell(c))
+                if (valStr?.contains("World Champion", ignoreCase = true) == true) {
+                    val teamName = getCellValueAsString(sheet.getRow(r + 1)?.getCell(c)) ?:
+                                   getCellValueAsString(sheet.getRow(r)?.getCell(c + 1))
+                    if (teamName != null && teamName.isNotBlank() && !teamName.contains("World Champion")) {
+                        champion = Team(teamName)
                     }
-                    if (champion != null) break
+                    break
                 }
-
-                val finalMatches = if (champion != null) matches + Match(1000, "", "", champion, null, 1, 0, Round.CHAMPION) else matches
-                participants.add(Participant(participantName, finalMatches))
             }
+            if (champion != null) break
         }
 
+        val finalMatches = if (champion != null) matches + Match(1000, "", "", champion, null, 1, 0, Round.CHAMPION) else matches
+
         workbook.close()
-        return participants
+        return Participant(filename, finalMatches)
     }
 
     private fun extractUsingAnchors(sheet: org.apache.poi.ss.usermodel.Sheet, structure: List<Match>): List<Match> {
@@ -158,9 +150,11 @@ class ExcelReader {
             val team1 = t1v?.takeIf { it.isNotBlank() && !it.all { char -> char.isDigit() } }?.let { Team(it) } ?: matchStruct.team1
             val team2 = t2v?.takeIf { it.isNotBlank() && !it.all { char -> char.isDigit() } }?.let { Team(it) } ?: matchStruct.team2
 
-            // Use the numeric value for scores, but ensure it's not a team name or ID accidentally
-            val s1 = s1v?.toIntOrNull()?.takeIf { it < 100 }
-            val s2 = s2v?.toIntOrNull()?.takeIf { it < 100 }
+            // Use the numeric value for scores.
+            // Heuristic: If it's the template, it has IDs like 15, 60.
+            // Real scores are small (0-10). If it's > 15, it's likely an ID placeholder.
+            val s1 = s1v?.toIntOrNull()?.takeIf { it < 15 }
+            val s2 = s2v?.toIntOrNull()?.takeIf { it < 15 }
 
             matches.add(matchStruct.copy(
                 team1 = team1,

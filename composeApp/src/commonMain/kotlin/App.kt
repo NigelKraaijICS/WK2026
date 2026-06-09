@@ -38,7 +38,7 @@ enum class ViewMode { OVERALL, ROUND_ANALYSIS, MATCH_ANALYSIS }
 
 @Composable
 fun App() {
-    var templateFile by remember { mutableStateOf<File?>(if (File("WK-pool.xlsx").exists()) File("WK-pool.xlsx") else null) }
+    val templateFile = File("WK-pool.xlsx")
     var participantFiles by remember { mutableStateOf(listOf<File>()) }
     var resultsFile by remember { mutableStateOf<File?>(null) }
     var resultSource by remember { mutableStateOf(ResultSource.API) }
@@ -85,18 +85,12 @@ fun App() {
                     NavButton("Match Analytics", Icons.Default.SportsSoccer, currentViewMode == ViewMode.MATCH_ANALYSIS) { currentViewMode = ViewMode.MATCH_ANALYSIS }
 
                     Spacer(modifier = Modifier.height(32.dp))
-                    SectionHeader("CONFIG")
+                    SectionHeader("RESULTS SOURCE")
 
-                    ModernButton(text = templateFile?.name ?: "Select Template", icon = Icons.Default.TableChart) {
-                        val chooser = JFileChooser().apply { fileFilter = FileNameExtensionFilter("Excel files", "xlsx") }
-                        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) templateFile = chooser.selectedFile
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    ResultSourceOption("Live API (Default)", resultSource == ResultSource.API) { resultSource = ResultSource.API }
+                    ResultSourceOption("Live API (Recommended)", resultSource == ResultSource.API) { resultSource = ResultSource.API }
                     ResultSourceOption("Master Excel", resultSource == ResultSource.EXCEL) { resultSource = ResultSource.EXCEL }
                     if (resultSource == ResultSource.EXCEL) {
-                        ModernButton(text = resultsFile?.name ?: "Select Results", icon = Icons.Default.FileUpload) {
+                        ModernButton(text = resultsFile?.name ?: "Select Results File", icon = Icons.Default.FileUpload) {
                             val chooser = JFileChooser().apply { fileFilter = FileNameExtensionFilter("Excel files", "xlsx") }
                             if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) resultsFile = chooser.selectedFile
                         }
@@ -109,10 +103,13 @@ fun App() {
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
-                    SectionHeader("PARTICIPANTS")
-                    ModernButton("Load Pool Files (${participantFiles.size})", Icons.Default.Groups) {
+                    SectionHeader("POOL PARTICIPANTS")
+                    ModernButton("Select Participant Files", Icons.Default.Groups) {
                         val chooser = JFileChooser().apply { isMultiSelectionEnabled = true; fileFilter = FileNameExtensionFilter("Excel files", "xlsx") }
                         if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) participantFiles = chooser.selectedFiles.toList()
+                    }
+                    if (participantFiles.isNotEmpty()) {
+                        Text("${participantFiles.size} files selected", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                     }
 
                     Spacer(modifier = Modifier.weight(1f))
@@ -128,8 +125,9 @@ fun App() {
                             statusMessage = "Syncing & Calculating..."
                             Thread {
                                 try {
-                                    val tFile = templateFile ?: throw Exception("Select a template file first")
-                                    val (groups, structureMatches) = reader.readTournamentStructure(tFile.inputStream())
+                                    if (!templateFile.exists()) throw Exception("Template WK-pool.xlsx not found in app directory")
+
+                                    val (groups, structureMatches) = reader.readTournamentStructure(templateFile.inputStream())
                                     tournamentStructure = structureMatches
 
                                     val resultProvider: ResultProvider = when (resultSource) {
@@ -148,12 +146,10 @@ fun App() {
 
                                     val actualTournament = tournamentLogic.simulateTournament(structureMatches, groups, rawResults)
 
-                                    val results = participantFiles.flatMap { file ->
-                                        val participants = reader.readParticipantsFromFile(file.inputStream(), structureMatches, file.nameWithoutExtension)
-                                        participants.map { p ->
-                                            val pTournament = tournamentLogic.simulateTournament(structureMatches, groups, p.predictions)
-                                            p.name to scoringEngine.calculateScoreBreakdown(Participant(p.name, pTournament), actualTournament)
-                                        }
+                                    val results = participantFiles.map { file ->
+                                        val p = reader.readParticipantFromFile(file.inputStream(), structureMatches, file.nameWithoutExtension)
+                                        val pTournament = tournamentLogic.simulateTournament(structureMatches, groups, p.predictions)
+                                        p.name to scoringEngine.calculateScoreBreakdown(Participant(p.name, pTournament), actualTournament)
                                     }.sortedByDescending { it.second.totalScore }
 
                                     rankings = results
@@ -168,7 +164,7 @@ fun App() {
                         },
                         modifier = Modifier.fillMaxWidth().height(60.dp),
                         shape = RoundedCornerShape(16.dp),
-                        enabled = participantFiles.isNotEmpty() && !isLoading && templateFile != null
+                        enabled = participantFiles.isNotEmpty() && !isLoading
                     ) {
                         if (isLoading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 3.dp)
                         else Text("EXECUTE ANALYSIS", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -212,7 +208,7 @@ fun OverallLeaderboard(rankings: List<Pair<String, ScoreBreakdown>>, onSelect: (
     Spacer(modifier = Modifier.height(32.dp))
     if (rankings.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No data analyzed. Select Template & Pool Files then click EXECUTE.", color = Color.Gray)
+            Text("No data analyzed. Select Participant Files then click EXECUTE.", color = Color.Gray)
         }
     } else {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
