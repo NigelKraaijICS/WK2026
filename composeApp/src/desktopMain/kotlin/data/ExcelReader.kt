@@ -14,12 +14,12 @@ class ExcelReader {
     fun readTournamentStructure(inputStream: InputStream): Pair<List<Group>, List<Match>> {
         val workbook = WorkbookFactory.create(inputStream)
 
-        // 1. First, discover anchors in "World Cup" sheet
+        // 1. Discover anchors in "World Cup" sheet
         val wcSheet = workbook.getSheet("World Cup") ?: throw IllegalArgumentException("World Cup sheet not found")
         val foundAnchors = mutableListOf<MatchAnchor>()
-        for (r in 0..200) {
+        for (r in 0..250) {
             val row = wcSheet.getRow(r) ?: continue
-            for (c in 0..50) {
+            for (c in 0..60) {
                 val cell = row.getCell(c)
                 val id = getCellValueAsInt(cell)
                 if (id != null && id in 1..104) {
@@ -88,7 +88,7 @@ class ExcelReader {
             matchId <= 100 -> Round.QUARTER_FINAL
             matchId <= 102 -> Round.SEMI_FINAL
             matchId == 104 -> Round.FINAL
-            matchId == 103 -> Round.GROUP // Third place (treating as group-like for scoring simplicity or ignoring)
+            matchId == 103 -> Round.GROUP
             else -> Round.GROUP
         }
     }
@@ -108,7 +108,6 @@ class ExcelReader {
         for (i in 0 until workbook.numberOfSheets) {
             val sheet = workbook.getSheetAt(i)
             if (sheet.sheetName.startsWith("Predictions_", ignoreCase = true) && !sheet.sheetName.contains("Ranking")) {
-                // Find name in sheet, usually at (2, 8) in the grid if name is Anna
                 var participantName = getCellValueAsString(sheet.getRow(2)?.getCell(8)) ?: filename
                 if (participantName.isEmpty() || participantName == "0") participantName = filename
 
@@ -146,12 +145,12 @@ class ExcelReader {
         for (anchor in anchors) {
             val matchStruct = structure.find { it.id == anchor.id } ?: continue
 
-            // Offset for team names: Row+2
+            // Teams at Row+2
             val teamRow = sheet.getRow(anchor.row + 2)
             val t1v = getCellValueAsString(teamRow?.getCell(anchor.col + 1))
             val t2v = getCellValueAsString(teamRow?.getCell(anchor.col + 2))
 
-            // Offset for scores: Row+3
+            // Scores at Row+3
             val scoreRow = sheet.getRow(anchor.row + 3)
             val s1v = getCellValueAsString(scoreRow?.getCell(anchor.col + 1))
             val s2v = getCellValueAsString(scoreRow?.getCell(anchor.col + 2))
@@ -159,8 +158,9 @@ class ExcelReader {
             val team1 = t1v?.takeIf { it.isNotBlank() && !it.all { char -> char.isDigit() } }?.let { Team(it) } ?: matchStruct.team1
             val team2 = t2v?.takeIf { it.isNotBlank() && !it.all { char -> char.isDigit() } }?.let { Team(it) } ?: matchStruct.team2
 
-            val s1 = s1v?.toIntOrNull()
-            val s2 = s2v?.toIntOrNull()
+            // Use the numeric value for scores, but ensure it's not a team name or ID accidentally
+            val s1 = s1v?.toIntOrNull()?.takeIf { it < 100 }
+            val s2 = s2v?.toIntOrNull()?.takeIf { it < 100 }
 
             matches.add(matchStruct.copy(
                 team1 = team1,

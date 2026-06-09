@@ -33,7 +33,7 @@ private val PrimaryGold = Color(0xFFFFD700)
 private val SuccessGreen = Color(0xFF00E676)
 private val ErrorRed = Color(0xFFFF5252)
 
-enum class ResultSource { EXCEL, MOCK, API }
+enum class ResultSource { EXCEL, API }
 enum class ViewMode { OVERALL, ROUND_ANALYSIS, MATCH_ANALYSIS }
 
 @Composable
@@ -41,7 +41,7 @@ fun App() {
     var templateFile by remember { mutableStateOf<File?>(if (File("WK-pool.xlsx").exists()) File("WK-pool.xlsx") else null) }
     var participantFiles by remember { mutableStateOf(listOf<File>()) }
     var resultsFile by remember { mutableStateOf<File?>(null) }
-    var resultSource by remember { mutableStateOf(ResultSource.MOCK) }
+    var resultSource by remember { mutableStateOf(ResultSource.API) }
     var rankings by remember { mutableStateOf(listOf<Pair<String, ScoreBreakdown>>()) }
     var selectedParticipant by remember { mutableStateOf<Pair<String, ScoreBreakdown>?>(null) }
     var isLoading by remember { mutableStateOf(false) }
@@ -93,6 +93,7 @@ fun App() {
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
+                    ResultSourceOption("Live API (Default)", resultSource == ResultSource.API) { resultSource = ResultSource.API }
                     ResultSourceOption("Master Excel", resultSource == ResultSource.EXCEL) { resultSource = ResultSource.EXCEL }
                     if (resultSource == ResultSource.EXCEL) {
                         ModernButton(text = resultsFile?.name ?: "Select Results", icon = Icons.Default.FileUpload) {
@@ -100,8 +101,6 @@ fun App() {
                             if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) resultsFile = chooser.selectedFile
                         }
                     }
-                    ResultSourceOption("Mock Data", resultSource == ResultSource.MOCK) { resultSource = ResultSource.MOCK }
-                    ResultSourceOption("Live API", resultSource == ResultSource.API) { resultSource = ResultSource.API }
 
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -135,7 +134,6 @@ fun App() {
 
                                     val resultProvider: ResultProvider = when (resultSource) {
                                         ResultSource.EXCEL -> ExcelResultProvider(resultsFile?.inputStream() ?: throw Exception("No result file selected"), structureMatches)
-                                        ResultSource.MOCK -> MockResultProvider(structureMatches)
                                         ResultSource.API -> RealApiResultProvider(structureMatches)
                                     }
 
