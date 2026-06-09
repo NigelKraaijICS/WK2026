@@ -1,7 +1,6 @@
 plugins {
     kotlin("multiplatform") version "1.9.22"
     id("org.jetbrains.compose") version "1.5.12"
-    kotlin("plugin.serialization") version "1.9.22"
 }
 
 kotlin {
@@ -19,18 +18,12 @@ kotlin {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
                 implementation(compose.materialIconsExtended)
                 implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.5.0")
-
-                // Ktor & Serialization
-                implementation("io.ktor:ktor-client-core:2.3.9")
-                implementation("io.ktor:ktor-client-content-negotiation:2.3.9")
-                implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.9")
             }
         }
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation("org.apache.poi:poi-ooxml:5.2.5")
-                implementation("io.ktor:ktor-client-okhttp:2.3.9")
             }
         }
         val desktopTest by getting {

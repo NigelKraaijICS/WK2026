@@ -104,7 +104,7 @@ class ExcelReader {
     fun readParticipantFromFile(inputStream: InputStream, structure: List<Match>, filename: String): Participant {
         val workbook = WorkbookFactory.create(inputStream)
 
-        // Always read from "World Cup" sheet as it's the primary input grid according to the user
+        // Exclusively use "World Cup" sheet for predictions and scores
         val sheet = workbook.getSheet("World Cup") ?: throw IllegalArgumentException("World Cup sheet not found in $filename")
         val matches = extractUsingAnchors(sheet, structure)
 
@@ -137,12 +137,12 @@ class ExcelReader {
         for (anchor in anchors) {
             val matchStruct = structure.find { it.id == anchor.id } ?: continue
 
-            // Teams at Row+2
+            // Teams at Row+2 relative to Match ID cell (e.g., ID at A11, Team Names at B13, C13)
             val teamRow = sheet.getRow(anchor.row + 2)
             val t1v = getCellValueAsString(teamRow?.getCell(anchor.col + 1))
             val t2v = getCellValueAsString(teamRow?.getCell(anchor.col + 2))
 
-            // Scores at Row+3
+            // Scores at Row+3 relative to Match ID cell (e.g., ID at A11, Scores at B14, C14)
             val scoreRow = sheet.getRow(anchor.row + 3)
             val s1v = getCellValueAsString(scoreRow?.getCell(anchor.col + 1))
             val s2v = getCellValueAsString(scoreRow?.getCell(anchor.col + 2))
@@ -150,9 +150,7 @@ class ExcelReader {
             val team1 = t1v?.takeIf { it.isNotBlank() && !it.all { char -> char.isDigit() } }?.let { Team(it) } ?: matchStruct.team1
             val team2 = t2v?.takeIf { it.isNotBlank() && !it.all { char -> char.isDigit() } }?.let { Team(it) } ?: matchStruct.team2
 
-            // Use the numeric value for scores.
-            // Heuristic: If it's the template, it has IDs like 15, 60.
-            // Real scores are small (0-10). If it's > 15, it's likely an ID placeholder.
+            // Goals - use numeric values. Avoid internal IDs (heuristic > 15)
             val s1 = s1v?.toIntOrNull()?.takeIf { it < 15 }
             val s2 = s2v?.toIntOrNull()?.takeIf { it < 15 }
 

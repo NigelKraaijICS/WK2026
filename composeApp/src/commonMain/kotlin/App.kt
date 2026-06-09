@@ -33,7 +33,6 @@ private val PrimaryGold = Color(0xFFFFD700)
 private val SuccessGreen = Color(0xFF00E676)
 private val ErrorRed = Color(0xFFFF5252)
 
-enum class ResultSource { EXCEL, API }
 enum class ViewMode { OVERALL, ROUND_ANALYSIS, MATCH_ANALYSIS }
 
 @Composable
@@ -41,7 +40,6 @@ fun App() {
     val templateFile = File("WK-pool.xlsx")
     var participantFiles by remember { mutableStateOf(listOf<File>()) }
     var resultsFile by remember { mutableStateOf<File?>(null) }
-    var resultSource by remember { mutableStateOf(ResultSource.API) }
     var rankings by remember { mutableStateOf(listOf<Pair<String, ScoreBreakdown>>()) }
     var selectedParticipant by remember { mutableStateOf<Pair<String, ScoreBreakdown>?>(null) }
     var isLoading by remember { mutableStateOf(false) }
@@ -85,31 +83,27 @@ fun App() {
                     NavButton("Match Analytics", Icons.Default.SportsSoccer, currentViewMode == ViewMode.MATCH_ANALYSIS) { currentViewMode = ViewMode.MATCH_ANALYSIS }
 
                     Spacer(modifier = Modifier.height(32.dp))
-                    SectionHeader("RESULTS SOURCE")
+                    SectionHeader("DATA INPUT")
 
-                    ResultSourceOption("Live API (Recommended)", resultSource == ResultSource.API) { resultSource = ResultSource.API }
-                    ResultSourceOption("Master Excel", resultSource == ResultSource.EXCEL) { resultSource = ResultSource.EXCEL }
-                    if (resultSource == ResultSource.EXCEL) {
-                        ModernButton(text = resultsFile?.name ?: "Select Results File", icon = Icons.Default.FileUpload) {
-                            val chooser = JFileChooser().apply { fileFilter = FileNameExtensionFilter("Excel files", "xlsx") }
-                            if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) resultsFile = chooser.selectedFile
-                        }
+                    ModernButton(text = resultsFile?.name ?: "Select Master Results", icon = Icons.Default.TableChart) {
+                        val chooser = JFileChooser().apply { fileFilter = FileNameExtensionFilter("Excel files", "xlsx") }
+                        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) resultsFile = chooser.selectedFile
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    ModernButton("Add Participant Files", Icons.Default.Groups) {
+                        val chooser = JFileChooser().apply { isMultiSelectionEnabled = true; fileFilter = FileNameExtensionFilter("Excel files", "xlsx") }
+                        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) participantFiles = (participantFiles + chooser.selectedFiles.toList()).distinct()
+                    }
+
+                    if (participantFiles.isNotEmpty()) {
+                        Text("${participantFiles.size} participants loaded", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = onlyCalculatePastGames, onCheckedChange = { onlyCalculatePastGames = it }, colors = CheckboxDefaults.colors(checkedColor = PrimaryGold))
                         Text("Only past games", color = Color.LightGray, fontSize = 12.sp)
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-                    SectionHeader("POOL PARTICIPANTS")
-                    ModernButton("Select Participant Files", Icons.Default.Groups) {
-                        val chooser = JFileChooser().apply { isMultiSelectionEnabled = true; fileFilter = FileNameExtensionFilter("Excel files", "xlsx") }
-                        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) participantFiles = chooser.selectedFiles.toList()
-                    }
-                    if (participantFiles.isNotEmpty()) {
-                        Text("${participantFiles.size} files selected", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
                     }
 
                     Spacer(modifier = Modifier.weight(1f))
@@ -125,16 +119,13 @@ fun App() {
                             statusMessage = "Syncing & Calculating..."
                             Thread {
                                 try {
-                                    if (!templateFile.exists()) throw Exception("Template WK-pool.xlsx not found in app directory")
+                                    if (!templateFile.exists()) throw Exception("Template WK-pool.xlsx not found")
+                                    val masterFile = resultsFile ?: throw Exception("Please select a Master Results file")
 
                                     val (groups, structureMatches) = reader.readTournamentStructure(templateFile.inputStream())
                                     tournamentStructure = structureMatches
 
-                                    val resultProvider: ResultProvider = when (resultSource) {
-                                        ResultSource.EXCEL -> ExcelResultProvider(resultsFile?.inputStream() ?: throw Exception("No result file selected"), structureMatches)
-                                        ResultSource.API -> RealApiResultProvider(structureMatches)
-                                    }
-
+                                    val resultProvider = ExcelResultProvider(masterFile.inputStream(), structureMatches)
                                     val now = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
                                     var rawResults = resultProvider.getResults()
 
@@ -164,7 +155,7 @@ fun App() {
                         },
                         modifier = Modifier.fillMaxWidth().height(60.dp),
                         shape = RoundedCornerShape(16.dp),
-                        enabled = participantFiles.isNotEmpty() && !isLoading
+                        enabled = participantFiles.isNotEmpty() && !isLoading && resultsFile != null
                     ) {
                         if (isLoading) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 3.dp)
                         else Text("EXECUTE ANALYSIS", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
@@ -208,7 +199,7 @@ fun OverallLeaderboard(rankings: List<Pair<String, ScoreBreakdown>>, onSelect: (
     Spacer(modifier = Modifier.height(32.dp))
     if (rankings.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No data analyzed. Select Participant Files then click EXECUTE.", color = Color.Gray)
+            Text("No data analyzed. Select Master Results & Participant Files then click EXECUTE.", color = Color.Gray)
         }
     } else {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -331,15 +322,6 @@ fun DetailedMatchRankingCard(name: String, info: MatchScoreInfo) {
             }
             Text("+${info.points}", style = MaterialTheme.typography.h5, fontWeight = FontWeight.Black, color = if (info.points > 0) SuccessGreen else Color.Gray)
         }
-    }
-}
-
-@Composable
-fun ResultSourceOption(text: String, selected: Boolean, onClick: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected = selected, onClick = onClick, colors = RadioButtonDefaults.colors(selectedColor = PrimaryGold))
-        Spacer(modifier = Modifier.width(8.dp))
-        Text(text, color = if (selected) Color.White else Color.Gray, fontSize = 14.sp)
     }
 }
 
