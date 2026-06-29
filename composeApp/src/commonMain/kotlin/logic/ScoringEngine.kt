@@ -7,10 +7,10 @@ class ScoringEngine {
     fun calculateScore(participant: Participant, actualResults: List<Match>): Int {
         var totalScore = 0
 
-        // Match Scores (Group and Knockout)
+        // Match Scores (Group stage only)
         // Correct prediction of win/draw/loss = 2 pts
         // Correct exact score = +3 pts
-        participant.predictions.filter { it.round != Round.CHAMPION }.forEach { prediction ->
+        participant.predictions.filter { it.round == Round.GROUP }.forEach { prediction ->
             val actual = actualResults.find { it.id == prediction.id }
             if (actual != null && actual.goals1 != null && actual.goals2 != null &&
                 prediction.goals1 != null && prediction.goals2 != null) {

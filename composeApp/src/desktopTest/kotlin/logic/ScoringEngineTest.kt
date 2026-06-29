@@ -51,7 +51,7 @@ class ScoringEngineTest {
     }
 
     @Test
-    fun testExactScoreInKO() {
+    fun testNoMatchPointsInKO() {
         val teamA = Team("A")
         val teamB = Team("B")
         val actualResults = listOf(
@@ -63,9 +63,18 @@ class ScoringEngineTest {
 
         val engine = ScoringEngine()
         val score = engine.calculateScore(participant, actualResults)
-        // Match points: 2 (win) + 3 (exact) = 5
+        // Match points: 0 (KO stage only awards advancement points)
         // Advancement: 2 (teamA reached R32) + 2 (teamB reached R32) = 4
-        // Total: 9
-        assertEquals(9, score)
+        // Total: 4
+        assertEquals(4, score)
+    }
+
+    @Test
+    fun testCaseInsensitiveTeamComparison() {
+        val teamA = Team("Argentina")
+        val teamA_alt = Team("  argentina  ")
+
+        assertEquals(teamA, teamA_alt)
+        assertEquals(teamA.hashCode(), teamA_alt.hashCode())
     }
 }

@@ -10,7 +10,17 @@ enum class Round(val points: Int) {
     CHAMPION(10)
 }
 
-data class Team(val name: String)
+data class Team(val name: String) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is Team) return false
+        return name.trim().equals(other.name.trim(), ignoreCase = true)
+    }
+
+    override fun hashCode(): Int {
+        return name.trim().lowercase().hashCode()
+    }
+}
 
 data class Match(
     val id: Int,

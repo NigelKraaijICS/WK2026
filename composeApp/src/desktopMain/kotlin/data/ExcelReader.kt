@@ -9,7 +9,8 @@ class ExcelReader {
 
     fun readTournamentStructure(inputStream: InputStream): Pair<List<Group>, List<Match>> {
         val workbook = WorkbookFactory.create(inputStream)
-        val sheet = workbook.getSheet("Matches") ?: throw IllegalArgumentException("Sheet Matches not found")
+        val sheet = workbook.getSheet("World Cup") ?: workbook.getSheet("Matches")
+            ?: throw IllegalArgumentException("Sheet 'World Cup' or 'Matches' not found")
 
         val allMatches = mutableListOf<Match>()
         val groupsMap = mutableMapOf<String, MutableList<Match>>()
@@ -17,16 +18,18 @@ class ExcelReader {
         // Group Stage matches are 1 to 72
         // Knockout matches are 73 to 104
 
-        for (i in 3..111) { // Up to Final
+        for (i in 3..115) { // Up to Final
             val row = sheet.getRow(i) ?: continue
             val matchIdStr = getCellValueAsString(row.getCell(1))
             if (matchIdStr == null || !matchIdStr.all { it.isDigit() }) continue
 
             val matchId = matchIdStr.toInt()
-            val team1Placeholder = getCellValueAsString(row.getCell(2)) ?: ""
-            val team2Placeholder = getCellValueAsString(row.getCell(3)) ?: ""
-            val team1Name = getCellValueAsString(row.getCell(8))
-            val team2Name = getCellValueAsString(row.getCell(9))
+            if (matchId == 103) continue // Skip 3rd place match
+
+            val team1Placeholder = getCellValueAsString(row.getCell(2))?.trim() ?: ""
+            val team2Placeholder = getCellValueAsString(row.getCell(3))?.trim() ?: ""
+            val team1Name = getCellValueAsString(row.getCell(8))?.trim()
+            val team2Name = getCellValueAsString(row.getCell(9))?.trim()
 
             val round = when {
                 matchId <= 72 -> Round.GROUP
@@ -35,7 +38,6 @@ class ExcelReader {
                 matchId <= 100 -> Round.QUARTER_FINAL
                 matchId <= 102 -> Round.SEMI_FINAL
                 matchId == 104 -> Round.FINAL
-                matchId == 103 -> Round.GROUP // Third place, treat as group or skip
                 else -> Round.GROUP
             }
 
@@ -66,31 +68,42 @@ class ExcelReader {
 
     fun readParticipant(inputStream: InputStream): Participant {
         val workbook = WorkbookFactory.create(inputStream)
-        val sheet = workbook.getSheet("Predictions_1") ?: workbook.getSheet("Predictions_2")
-            ?: throw IllegalArgumentException("Sheet Predictions_1 or Predictions_2 not found")
+        val sheet = workbook.getSheet("World Cup") ?: workbook.getSheet("Predictions_1") ?: workbook.getSheet("Predictions_2")
+            ?: throw IllegalArgumentException("Sheet 'World Cup', 'Predictions_1' or 'Predictions_2' not found")
 
         val nameCell = sheet.getRow(2)?.getCell(8)
-        val name = nameCell?.stringCellValue ?: "Unknown"
+        val name = getCellValueAsString(nameCell)?.trim() ?: "Unknown"
 
         val predictions = mutableListOf<Match>()
 
-        for (i in 4..125) {
+        for (i in 4..130) {
             val row = sheet.getRow(i) ?: continue
 
-            val cell1Value = getCellValueAsString(row.getCell(1))
+            val cell1Value = getCellValueAsString(row.getCell(1))?.trim()
+
+            if (cell1Value == "World Champion") {
+                val teamName = getCellValueAsString(row.getCell(8))?.trim()
+                if (teamName != null) {
+                    predictions.add(Match(1000, "", "", Team(teamName), null, 1, 0, Round.CHAMPION))
+                }
+                continue
+            }
+
             if (cell1Value == "Round of 32" || cell1Value == "Round of 16" ||
                 cell1Value == "Quarter final" || cell1Value == "Semi-Final" ||
-                cell1Value == "Final" || cell1Value == "World Champion") continue
+                cell1Value == "Final") continue
 
             // Determine if it's a match prediction
             val matchIdStr = cell1Value
             if (matchIdStr != null && matchIdStr.all { it.isDigit() }) {
                 val matchId = matchIdStr.toInt()
+                if (matchId == 103) continue // Skip 3rd place match
+
                 if (matchId <= 72) {
                     // Group Match
-                    val team1Name = getCellValueAsString(row.getCell(2)) ?: ""
+                    val team1Name = getCellValueAsString(row.getCell(2))?.trim() ?: ""
                     val goals1 = getCellValueAsInt(row.getCell(3))
-                    val team2Name = getCellValueAsString(row.getCell(4)) ?: ""
+                    val team2Name = getCellValueAsString(row.getCell(4))?.trim() ?: ""
                     val goals2 = getCellValueAsInt(row.getCell(10))
 
                     predictions.add(Match(
@@ -102,9 +115,9 @@ class ExcelReader {
                     ))
                 } else {
                     // Knockout Match
-                    val team1Name = getCellValueAsString(row.getCell(8))
+                    val team1Name = getCellValueAsString(row.getCell(8))?.trim()
                     val goals1 = getCellValueAsInt(row.getCell(10))
-                    val team2Name = getCellValueAsString(row.getCell(11))
+                    val team2Name = getCellValueAsString(row.getCell(11))?.trim()
                     val goals2 = getCellValueAsInt(row.getCell(12))
 
                     val round = when {
@@ -116,22 +129,17 @@ class ExcelReader {
                         else -> Round.GROUP
                     }
 
-                    if (team1Name != null && team2Name != null) {
+                    if (goals1 != null && goals2 != null) {
                         predictions.add(Match(
                             id = matchId,
                             team1Placeholder = "", team2Placeholder = "",
-                            team1 = Team(team1Name), team2 = Team(team2Name),
+                            team1 = team1Name?.let { Team(it) },
+                            team2 = team2Name?.let { Team(it) },
                             goals1 = goals1, goals2 = goals2,
                             round = round
                         ))
                     }
                 }
-            } else if (cell1Value == null && i == 125) {
-                 // Champion cell is special
-                 val teamName = getCellValueAsString(row.getCell(8))
-                 if (teamName != null) {
-                     predictions.add(Match(1000, "", "", Team(teamName), null, 1, 0, Round.CHAMPION))
-                 }
             }
         }
 
